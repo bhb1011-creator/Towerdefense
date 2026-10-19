@@ -255,6 +255,7 @@ function resetGame() {
     spawnCount: 0,
     waveActive: false,
     selectedType: "laser",
+    buildMode: false, // Turm aus dem Shop gewählt, Raster wird angezeigt
     selected: null, // { kind: "tower", tower } | { kind: "obstacle", col, row }
     hoverTile: null,
     speed: 1,
@@ -419,6 +420,13 @@ function canBuild(col, row) {
     col >= 0 && col < COLS && row >= 0 && row < ROWS &&
     grid[row][col] === "pad" && !towerAt(col, row)
   );
+}
+
+function cancelBuild() {
+  if (!state.buildMode) return;
+  state.buildMode = false;
+  renderShop();
+  setInfo("Bauen abgebrochen.");
 }
 
 function placeTower(col, row) {
@@ -874,7 +882,7 @@ function renderShop() {
     btn.title = t.desc;
     const lock = isUnlocked(key) ? "" : ` 🔒 ab Welle ${t.unlockWave}`;
     btn.innerHTML = `<span class="swatch" style="background:${t.color};box-shadow:0 0 8px ${t.color}"></span>${t.name} (${t.cost} 💰)${lock}`;
-    if (key === state.selectedType) btn.classList.add("selected");
+    if (state.buildMode && key === state.selectedType) btn.classList.add("selected");
     btn.onclick = () => selectTowerType(key);
     ui.shop.appendChild(btn);
   }
@@ -882,12 +890,13 @@ function renderShop() {
 
 function selectTowerType(key) {
   state.selectedType = key;
+  state.buildMode = true;
   state.selected = null;
   renderShop();
   updateHud();
   const t = TOWER_TYPES[key];
   const lock = isUnlocked(key) ? "" : ` <b>Wird ab Welle ${t.unlockWave} freigeschaltet.</b>`;
-  setInfo(`${t.name}: ${t.desc}${lock}`);
+  setInfo(`${t.name}: ${t.desc}${lock}<br><small>Klicke auf ein freies Feld im Raster. Umschalttaste gedrückt halten für mehrere Türme, Esc oder Rechtsklick bricht ab.</small>`);
 }
 
 function renderLegend() {
@@ -948,25 +957,36 @@ function showObstacleInfo(col, row) {
 }
 
 // Wird von scene.js aufgerufen, wenn ein Feld angeklickt wurde
-function handleTileClick(col, row) {
+function handleTileClick(col, row, keepBuilding = false) {
   if (state.gameOver) return;
   if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return;
   const tower = towerAt(col, row);
   if (tower) {
+    state.buildMode = false;
+    renderShop();
     state.selected = { kind: "tower", tower };
     showTowerInfo(tower);
     return;
   }
   const cell = grid[row][col];
   if (OBSTACLES[cell]) {
+    state.buildMode = false;
+    renderShop();
     state.selected = { kind: "obstacle", col, row };
     showObstacleInfo(col, row);
     return;
   }
   state.selected = null;
-  if (cell === "pool") setInfo("Auf einem Energiebecken kann nicht gebaut werden.");
+  if (cell === "pool") setInfo("Auf einem Energiesee kann nicht gebaut werden.");
   else if (cell === "gate") setInfo("Das ist dein Stadttor – verteidige es!");
-  else if (canBuild(col, row)) placeTower(col, row);
+  else if (state.buildMode && canBuild(col, row)) {
+    const before = state.towers.length;
+    placeTower(col, row);
+    if (state.towers.length > before && !keepBuilding) {
+      state.buildMode = false;
+      renderShop();
+    }
+  } else if (!state.buildMode) setInfo("Wähle unten einen Turm aus, um zu bauen.");
 }
 
 ui.startWave.addEventListener("click", startWave);
@@ -979,6 +999,7 @@ ui.speed.addEventListener("click", () => {
 ui.resetCamera.addEventListener("click", () => View.resetCamera());
 
 document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape") cancelBuild();
   if (ev.key === " ") {
     ev.preventDefault();
     startWave();

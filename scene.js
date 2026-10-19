@@ -5,9 +5,11 @@
 // Koordinaten: 1 Einheit = 1 Feld, X = Spalte, Z = Zeile, Y = Höhe.
 
 const View = (() => {
-  const PAD_TOP = 0.05;
-  const ROAD_Y = -0.03;
   const SLAB_TOP = -0.05;
+  const FLOOR_Y = SLAB_TOP + 0.002;
+  const FLOOR_MARGIN = 0.3;
+  const PAD_TOP = FLOOR_Y + 0.003;
+  const ROAD_Y = FLOOR_Y + 0.016;
   const MAX_PARTICLES = 2500;
 
   let renderer, scene, camera, controls, container, composer, bloomPass;
@@ -15,7 +17,7 @@ const View = (() => {
   let obstacleMeshes = new Map();
   let animated = []; // { obj, fn(obj, time) } für Animationen der Karte/Stadt
   let roadDashes = null;
-  let hoverMesh, selectMesh, rangeGroup, particleMesh, sparkles;
+  let hoverMesh, selectMesh, rangeGroup, particleMesh, sparkles, holoFill, holoEdge;
   const raycaster = new THREE.Raycaster();
   const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -PAD_TOP);
   const pointer = new THREE.Vector2();
@@ -284,7 +286,7 @@ const View = (() => {
     // Licht: warme Abendsonne von der Meerseite, kühles Neonlicht von der Stadt
     scene.add(new THREE.HemisphereLight("#9a6bff", "#2a0b30", 0.6));
     const sun = new THREE.DirectionalLight("#ffb08a", 0.85);
-    sun.position.set(-15, 11, -3);
+    sun.position.set(-5, 10, -16);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
     const sc = sun.shadow.camera;
@@ -392,16 +394,23 @@ const View = (() => {
   function setupInput() {
     const el = renderer.domElement;
     let down = null;
-    el.addEventListener("contextmenu", (ev) => ev.preventDefault());
+    let rightDown = null;
+    el.addEventListener("contextmenu", (ev) => {
+      ev.preventDefault();
+      // Rechtsklick ohne Ziehen bricht das Bauen ab (Ziehen verschiebt die Kamera)
+      if (rightDown && Math.hypot(ev.clientX - rightDown.x, ev.clientY - rightDown.y) < 6) cancelBuild();
+      rightDown = null;
+    });
     el.addEventListener("pointerdown", (ev) => {
       down = { x: ev.clientX, y: ev.clientY, button: ev.button };
+      if (ev.button === 2) rightDown = { x: ev.clientX, y: ev.clientY };
     });
     el.addEventListener("pointerup", (ev) => {
       if (!down) return;
       const moved = Math.hypot(ev.clientX - down.x, ev.clientY - down.y);
       if (down.button === 0 && moved < 6) {
         const tile = pickTile(ev);
-        if (tile) handleTileClick(tile.col, tile.row);
+        if (tile) handleTileClick(tile.col, tile.row, ev.shiftKey);
       }
       down = null;
     });
@@ -898,40 +907,25 @@ const View = (() => {
       mapGroup.add(tube);
     }
 
-    // Bauflächen als Retro-Platten mit Neon-Raster in den Fugen
-    const padCells = [];
-    for (let r = 0; r < ROWS; r++) {
-      for (let c = 0; c < COLS; c++) {
-        const t = grid[r][c];
-        if (t === "pad" || OBSTACLES[t]) padCells.push([c, r]);
-      }
-    }
-    const padShape = roundedRectPath(new THREE.Shape(), -0.41, -0.41, 0.82, 0.82, 0.06);
-    const padGeo = new THREE.ExtrudeGeometry(padShape, {
-      depth: 0.065, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.02, bevelSegments: 2, curveSegments: 3,
-    }).rotateX(-Math.PI / 2);
-    const pads = new THREE.InstancedMesh(
-      padGeo,
-      new THREE.MeshPhysicalMaterial({ color: "#ffffff", metalness: 0.35, roughness: 0.62, iridescence: 0.35, iridescenceIOR: 1.5 }),
-      padCells.length
-    );
-    pads.receiveShadow = true;
-    const padA = new THREE.Color("#3a2a5e");
-    const padB = new THREE.Color("#4e3878");
-    padCells.forEach(([c, r], i) => {
-      tmpMatrix.makeTranslation(tileX(c), PAD_TOP - 0.085, tileZ(r));
-      pads.setMatrixAt(i, tmpMatrix);
-      pads.setColorAt(i, tmpColor.copy(padA).lerp(padB, variant[r][c]));
-    });
-    mapGroup.add(pads);
-    const gridPts = [];
-    for (let c = 0; c <= COLS; c++) gridPts.push(c - COLS / 2, 0, -ROWS / 2, c - COLS / 2, 0, ROWS / 2);
-    for (let r = 0; r <= ROWS; r++) gridPts.push(-COLS / 2, 0, r - ROWS / 2, COLS / 2, 0, r - ROWS / 2);
-    const gridGeo = new THREE.BufferGeometry();
-    gridGeo.setAttribute("position", new THREE.Float32BufferAttribute(gridPts, 3));
-    const boardGrid = new THREE.LineSegments(gridGeo, new THREE.LineBasicMaterial({ color: tmpColor.set("#ff3cac").multiplyScalar(1.1) }));
-    boardGrid.position.y = SLAB_TOP + 0.004;
-    mapGroup.add(boardGrid);
+    // Glatter Metallboden mit Details (eine Fläche statt einzelner Platten)
+    const floorTex = floorTextures(rng);
+    const floor = mesh(new THREE.PlaneGeometry(COLS + FLOOR_MARGIN * 2, ROWS + FLOOR_MARGIN * 2).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({
+      map: floorTex.map, roughnessMap: floorTex.rough, roughness: 1, metalness: 0.55,
+      emissive: "#ffffff", emissiveMap: floorTex.glow, emissiveIntensity: 1,
+    }), { receive: true });
+    floor.position.y = FLOOR_Y;
+    mapGroup.add(floor);
+
+    // Hologramm-Raster: nur im Baumodus sichtbar
+    holoFill = new THREE.InstancedMesh(G("holoFill", () => new THREE.PlaneGeometry(0.9, 0.9).rotateX(-Math.PI / 2)), new THREE.MeshBasicMaterial({
+      color: "#29e6ff", transparent: true, opacity: 0.1, depthWrite: false, blending: THREE.AdditiveBlending,
+    }), COLS * ROWS);
+    holoEdge = new THREE.InstancedMesh(G("holoEdge", () => roundedOutline(0.9, 0.08, 0.025)), new THREE.MeshBasicMaterial({
+      color: tmpColor.set("#7ff8ff").multiplyScalar(1.3), transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending,
+    }), COLS * ROWS);
+    holoFill.frustumCulled = holoEdge.frustumCulled = false;
+    holoFill.count = holoEdge.count = 0;
+    mapGroup.add(holoFill, holoEdge);
 
     // Straße mit Neon-Kanten und Lichtstreifen, die zum Tor fließen
     pathPoints.forEach((pts, pi) => {
@@ -951,20 +945,59 @@ const View = (() => {
     roadDashes.frustumCulled = false;
     mapGroup.add(roadDashes);
 
-    // Energiebecken mit leuchtendem Plasma
+    // Energieseen: jeweils eine zusammenhängende, organische Fläche
+    const poolMask = canvasTexture(512, Math.round(512 * (ROWS + FLOOR_MARGIN * 2) / (COLS + FLOOR_MARGIN * 2)), (g, w, h) => {
+      g.fillStyle = "#000000";
+      g.fillRect(0, 0, w, h);
+      g.globalCompositeOperation = "lighter";
+      const ppt = w / (COLS + FLOOR_MARGIN * 2);
+      for (const pool of POOLS) {
+        for (const [c, r] of pool) {
+          const x = (c + 0.5 + FLOOR_MARGIN) * ppt;
+          const y = (r + 0.5 + FLOOR_MARGIN) * ppt;
+          const grad = g.createRadialGradient(x, y, 0, x, y, ppt * 0.95);
+          grad.addColorStop(0, "rgba(255,255,255,1)");
+          grad.addColorStop(1, "rgba(255,255,255,0)");
+          g.fillStyle = grad;
+          g.fillRect(x - ppt, y - ppt, ppt * 2, ppt * 2);
+        }
+      }
+    });
+    const poolMat = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      uniforms: { mask: { value: poolMask }, time: { value: 0 } },
+      vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+      fragmentShader: `
+        uniform sampler2D mask; uniform float time;
+        varying vec2 vUv;
+        void main(){
+          float m = texture2D(mask, vUv).r;
+          if (m < 0.3) discard;
+          if (m < 0.5) {
+            // weicher Schein außerhalb des Ufers
+            gl_FragColor = vec4(vec3(0.2, 1.0, 0.95) * 1.2, (m - 0.3) / 0.2 * 0.35);
+            return;
+          }
+          vec2 p = vUv * vec2(26.0, 16.0);
+          float w = sin(p.x * 1.3 + time) + sin(p.y * 1.7 - time * 1.2) + sin((p.x + p.y) * 0.9 + time * 0.7);
+          vec3 deep = vec3(0.0, 0.22, 0.32);
+          vec3 bright = vec3(0.25, 1.0, 0.9);
+          vec3 c = mix(deep, bright, 0.5 + 0.5 * sin(w * 1.6));
+          float caustic = pow(max(0.0, sin(w * 3.0 + time)), 8.0);
+          c += vec3(0.8, 1.0, 1.0) * caustic * 0.6;
+          float rim = 1.0 - smoothstep(0.5, 0.62, m);
+          c = mix(c, vec3(0.85, 1.0, 1.0) * 1.6, rim);
+          gl_FragColor = vec4(c, 1.0);
+        }`,
+    });
+    const pools = new THREE.Mesh(new THREE.PlaneGeometry(COLS + FLOOR_MARGIN * 2, ROWS + FLOOR_MARGIN * 2).rotateX(-Math.PI / 2), poolMat);
+    pools.userData.ownMaterial = true;
+    pools.position.y = FLOOR_Y + 0.006;
+    mapGroup.add(pools);
+    animated.push({ fn: (t) => { poolMat.uniforms.time.value = t; } });
     for (const pool of POOLS) {
       for (const [c, r] of pool) {
-        const rimMesh = mesh(G("poolRim", () => new THREE.CylinderGeometry(0.64, 0.64, 0.1, 32)), chrome("#8a90c0", 0.2));
-        rimMesh.position.set(tileX(c), PAD_TOP - 0.07, tileZ(r));
-        mapGroup.add(rimMesh);
-      }
-      const plasmaMat = new THREE.MeshStandardMaterial({
-        color: "#04202a", emissive: "#ffffff", emissiveMap: plasmaTexture(), emissiveIntensity: 0.9, roughness: 0.05, metalness: 0.4,
-      });
-      for (const [c, r] of pool) {
-        const disc = new THREE.Mesh(G("poolDisc", () => new THREE.CylinderGeometry(0.56, 0.56, 0.04, 32)), plasmaMat);
-        disc.position.set(tileX(c), PAD_TOP - 0.01, tileZ(r));
-        mapGroup.add(disc);
         // aufsteigende Energieblasen
         for (let i = 0; i < 2; i++) {
           const bubble = glowSprite("#7affea", 0.18);
@@ -975,19 +1008,12 @@ const View = (() => {
           animated.push({
             fn: (t) => {
               const k = (t * 0.35 + ph) % 1;
-              bubble.position.set(tileX(c) + ox, PAD_TOP + k * 0.8, tileZ(r) + oz);
+              bubble.position.set(tileX(c) + ox, FLOOR_Y + k * 0.8, tileZ(r) + oz);
               bubble.material.opacity = 1 - k;
             },
           });
         }
       }
-      animated.push({
-        fn: (t) => {
-          plasmaMat.emissiveIntensity = 0.85 + Math.sin(t * 2.2) * 0.2;
-          plasmaMat.emissiveMap.offset.set(t * 0.03, t * 0.05);
-          plasmaMat.emissiveMap.rotation = t * 0.05;
-        },
-      });
     }
 
     // Holo-Kioske und Frachtcontainer
@@ -1109,6 +1135,197 @@ const View = (() => {
       plasmaTex.center.set(0.5, 0.5);
     }
     return plasmaTex;
+  }
+
+  // Texturen für den Boden: Farbe, Rauheit (für Spiegelungen) und leuchtende Details
+  function floorTextures(rng) {
+    const tilesW = COLS + FLOOR_MARGIN * 2;
+    const tilesH = ROWS + FLOOR_MARGIN * 2;
+    const W = 2048;
+    const H = Math.round((W * tilesH) / tilesW);
+    const ppt = W / tilesW;
+    const px = (c) => (c + FLOOR_MARGIN) * ppt;
+    const py = (r) => (r + FLOOR_MARGIN) * ppt;
+
+    // Plattenfugen in unregelmäßigen Abständen (nicht im Feldraster)
+    const seamsX = [];
+    for (let x = -FLOOR_MARGIN; x < COLS + FLOOR_MARGIN; x += 2.3 + rng() * 2.4) seamsX.push(x);
+    const rowsY = [];
+    for (let y = -FLOOR_MARGIN; y < ROWS + FLOOR_MARGIN; y += 2 + rng() * 2) rowsY.push(y);
+    const panels = [];
+    rowsY.forEach((y0, i) => {
+      const y1 = rowsY[i + 1] ?? ROWS + FLOOR_MARGIN;
+      const shift = rng() * 2;
+      let x0 = -FLOOR_MARGIN;
+      for (const sx of seamsX) {
+        const x1 = sx + shift;
+        if (x1 > x0 + 0.8 && x1 < COLS + FLOOR_MARGIN) {
+          panels.push([x0, y0, x1, y1]);
+          x0 = x1;
+        }
+      }
+      panels.push([x0, y0, COLS + FLOOR_MARGIN, y1]);
+    });
+
+    const map = canvasTexture(W, H, (g) => {
+      const grad = g.createLinearGradient(0, 0, 0, H);
+      grad.addColorStop(0, "#2c1f52");
+      grad.addColorStop(1, "#211843");
+      g.fillStyle = grad;
+      g.fillRect(0, 0, W, H);
+      // leicht unterschiedlich getönte Platten
+      for (const [x0, y0, x1, y1] of panels) {
+        g.fillStyle = `rgba(${rng() < 0.5 ? "255,255,255" : "0,0,0"},${0.02 + rng() * 0.04})`;
+        g.fillRect(px(x0), py(y0), px(x1) - px(x0), py(y1) - py(y0));
+      }
+      // gebürstetes Metall und Kratzer
+      for (let i = 0; i < 2500; i++) {
+        g.fillStyle = `rgba(255,255,255,${rng() * 0.035})`;
+        g.fillRect(rng() * W, rng() * H, 20 + rng() * 120, 1);
+      }
+      for (let i = 0; i < 6000; i++) {
+        g.fillStyle = `rgba(0,0,0,${rng() * 0.12})`;
+        g.fillRect(rng() * W, rng() * H, 2, 2);
+      }
+      // Fugen mit Lichtkante
+      for (const [x0, y0, x1, y1] of panels) {
+        g.strokeStyle = "rgba(8,4,20,0.85)";
+        g.lineWidth = 4;
+        g.strokeRect(px(x0), py(y0), px(x1) - px(x0), py(y1) - py(y0));
+        g.strokeStyle = "rgba(190,160,255,0.18)";
+        g.lineWidth = 1;
+        g.strokeRect(px(x0) + 3, py(y0) + 3, px(x1) - px(x0) - 6, py(y1) - py(y0) - 6);
+        // Schrauben an den Ecken
+        g.fillStyle = "rgba(200,190,255,0.35)";
+        for (const [bx, by] of [[x0, y0], [x1, y0], [x0, y1], [x1, y1]]) {
+          for (const [ox, oy] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+            g.beginPath();
+            g.arc(px(bx) + ox * 12, py(by) + oy * 12, 3, 0, Math.PI * 2);
+            g.fill();
+          }
+        }
+      }
+      // Lüftungsgitter
+      for (let i = 0; i < 22; i++) {
+        const x = px(rng() * COLS);
+        const y = py(rng() * ROWS);
+        g.fillStyle = "rgba(10,6,24,0.8)";
+        g.fillRect(x, y, ppt * 0.6, ppt * 0.28);
+        g.fillStyle = "rgba(150,130,220,0.25)";
+        for (let k = 4; k < ppt * 0.6; k += 7) g.fillRect(x + k, y + 4, 3, ppt * 0.28 - 8);
+      }
+      // Wartungsdeckel
+      for (let i = 0; i < 8; i++) {
+        const x = px(rng() * COLS);
+        const y = py(rng() * ROWS);
+        g.strokeStyle = "rgba(170,150,255,0.3)";
+        g.lineWidth = 3;
+        g.beginPath();
+        g.arc(x, y, ppt * 0.22, 0, Math.PI * 2);
+        g.stroke();
+        g.beginPath();
+        g.moveTo(x - ppt * 0.12, y);
+        g.lineTo(x + ppt * 0.12, y);
+        g.stroke();
+      }
+      // Warnstreifen an Portalen und Tor
+      const hazard = (x0, y0, w, h) => {
+        g.save();
+        g.beginPath();
+        g.rect(px(x0), py(y0), w * ppt, h * ppt);
+        g.clip();
+        g.fillStyle = "rgba(20,10,10,0.7)";
+        g.fillRect(px(x0), py(y0), w * ppt, h * ppt);
+        g.fillStyle = "rgba(255,200,40,0.75)";
+        for (let k = -h * ppt; k < w * ppt; k += 28) {
+          g.beginPath();
+          g.moveTo(px(x0) + k, py(y0) + h * ppt);
+          g.lineTo(px(x0) + k + 14, py(y0) + h * ppt);
+          g.lineTo(px(x0) + k + 14 + h * ppt, py(y0));
+          g.lineTo(px(x0) + k + h * ppt, py(y0));
+          g.fill();
+        }
+        g.restore();
+      };
+      hazard(-0.3, 1.0, 0.25, 0.9);
+      hazard(-0.3, 1.0 + 1.1, 0.25, 0.9);
+      hazard(-0.3, 9.0, 0.25, 0.9);
+      hazard(-0.3, 10.1, 0.25, 0.9);
+      hazard(18.05, 7.85, 0.9, 0.18);
+      hazard(18.05, 10.97, 0.9, 0.18);
+      // Beschriftungen
+      g.fillStyle = "rgba(220,200,255,0.12)";
+      g.font = `bold ${Math.round(ppt * 0.7)}px system-ui, sans-serif`;
+      g.textAlign = "center";
+      g.fillText("NEO-CITY · SUNSET DISTRICT", px(COLS / 2), py(ROWS - 0.25));
+      g.font = `bold ${Math.round(ppt * 0.22)}px monospace`;
+      g.fillStyle = "rgba(220,200,255,0.25)";
+      for (const [x0, y0] of panels) {
+        if (rng() < 0.35) g.fillText(`${String.fromCharCode(65 + Math.floor(rng() * 8))}-${Math.floor(rng() * 90 + 10)}`, px(x0) + ppt * 0.35, py(y0) + ppt * 0.3);
+      }
+    });
+
+    const rough = canvasTexture(W / 2, H / 2, (g) => {
+      g.fillStyle = "rgb(120,120,120)";
+      g.fillRect(0, 0, W / 2, H / 2);
+      for (const [x0, y0, x1, y1] of panels) {
+        const v = 80 + Math.floor(rng() * 90);
+        g.fillStyle = `rgb(${v},${v},${v})`;
+        g.fillRect(px(x0) / 2, py(y0) / 2, (px(x1) - px(x0)) / 2, (py(y1) - py(y0)) / 2);
+      }
+      // glänzende Kratzer und Schlieren
+      for (let i = 0; i < 900; i++) {
+        const v = 40 + Math.floor(rng() * 60);
+        g.fillStyle = `rgba(${v},${v},${v},0.5)`;
+        g.fillRect((rng() * W) / 2, (rng() * H) / 2, 10 + rng() * 80, 1);
+      }
+    });
+
+    const glow = canvasTexture(W, H, (g) => {
+      g.fillStyle = "#000000";
+      g.fillRect(0, 0, W, H);
+      // Leiterbahnen
+      const colors = ["rgba(41,230,255,", "rgba(255,60,172,", "rgba(179,136,255,"];
+      for (let i = 0; i < 46; i++) {
+        let x = px(rng() * COLS);
+        let y = py(rng() * ROWS);
+        const col = colors[i % colors.length];
+        g.strokeStyle = col + "0.38)";
+        g.lineWidth = 2;
+        g.beginPath();
+        g.moveTo(x, y);
+        let dir = Math.floor(rng() * 4);
+        const steps = 2 + Math.floor(rng() * 4);
+        for (let k = 0; k < steps; k++) {
+          const len = ppt * (0.4 + rng() * 1.6);
+          const diag = rng() < 0.35;
+          const dx = [1, 0, -1, 0][dir];
+          const dy = [0, 1, 0, -1][dir];
+          if (diag) {
+            x += (dx + dy) * len * 0.5;
+            y += (dy - dx) * len * 0.5;
+          } else {
+            x += dx * len;
+            y += dy * len;
+          }
+          g.lineTo(x, y);
+          dir = (dir + (rng() < 0.5 ? 1 : 3)) % 4;
+        }
+        g.stroke();
+        g.fillStyle = col + "0.8)";
+        g.beginPath();
+        g.arc(x, y, 4, 0, Math.PI * 2);
+        g.fill();
+      }
+      // kleine LED-Punkte in den Fugen
+      for (const [x0, y0, x1] of panels) {
+        if (rng() < 0.5) continue;
+        g.fillStyle = rng() < 0.5 ? "rgba(41,230,255,0.9)" : "rgba(255,60,172,0.9)";
+        for (let x = px(x0) + 30; x < px(x1) - 20; x += 46) g.fillRect(x, py(y0) - 1, 10, 3);
+      }
+    });
+    for (const t of [map, glow]) t.anisotropy = 8;
+    return { map, rough, glow };
   }
 
   const KIOSK_SIGNS = [["NUDELN", "#ff4fd8", "#ffd740"], ["24/7", "#29e6ff", "#b388ff"], ["BAR", "#b388ff", "#ff4fd8"], ["SHOP", "#69f0ae", "#29e6ff"], ["CHIPS", "#ffd740", "#ff8a3d"]];
@@ -2048,8 +2265,26 @@ const View = (() => {
       rangeGroup.scale.setScalar(px / TILE);
     };
 
+    // Hologramm-Raster der freien Bauplätze im Baumodus
+    let n = 0;
+    if (state.buildMode && !state.gameOver) {
+      const flicker = 0.75 + Math.sin(realTime * 6) * 0.1 + (Math.random() < 0.03 ? -0.3 : 0);
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          if (!canBuild(c, r)) continue;
+          tmpMatrix.makeTranslation(tileX(c), PAD_TOP + 0.01, tileZ(r));
+          holoFill.setMatrixAt(n, tmpMatrix);
+          holoEdge.setMatrixAt(n, tmpMatrix);
+          n++;
+        }
+      }
+      holoEdge.material.opacity = flicker;
+      holoFill.instanceMatrix.needsUpdate = holoEdge.instanceMatrix.needsUpdate = true;
+    }
+    holoFill.count = holoEdge.count = n;
+
     const hov = state.hoverTile;
-    if (hov && !state.gameOver && !towerAt(hov.col, hov.row)) {
+    if (hov && state.buildMode && !state.gameOver && !towerAt(hov.col, hov.row)) {
       const cell = grid[hov.row][hov.col];
       if (cell !== "path") {
         const ok = canBuild(hov.col, hov.row);
