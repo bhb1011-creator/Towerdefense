@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tower Defense 3D</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>Tower Defense 3D</h1>
+
+  <div id="hud">
+    <span>❤️ Leben: <b id="lives">20</b></span>
+    <span>💰 Gold: <b id="gold">100</b></span>
+    <span>🌊 Welle: <b id="wave">0</b></span>
+    <button id="startWave">Welle starten</button>
+    <button id="speed">Tempo: 1x</button>
+    <button id="resetCamera">🎥 Kamera zurücksetzen</button>
+  </div>
+
+  <div id="view">
+    <div id="overlay" hidden>GAME OVER</div>
+    <div id="controlsHint">Linke Maustaste ziehen: drehen · Rechte Maustaste: verschieben · Mausrad: zoomen</div>
+  </div>
+
+  <div id="panel">
+    <div id="shop"></div>
+    <div id="info"></div>
+    <details id="legendBox">
+      <summary>Gegner-Übersicht</summary>
+      <div id="legend"></div>
+    </details>
+  </div>
+
+  <script src="../../lib/three.min.js"></script>
+  <script src="../../lib/OrbitControls.js"></script>
+  <script src="scene.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>

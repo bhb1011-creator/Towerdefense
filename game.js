@@ -1440,6 +1440,7 @@ function renderMenu() {
     html += '<button data-act="new">✦ Neues Spiel</button>';
     html += '<button data-act="settings">⚙ Einstellungen</button>';
     html += '<button data-act="help">? Anleitung</button>';
+    html += '<button data-act="versions">📜 Alle Versionen</button>';
     html += "</div>";
   } else if (menuScreen === "new") {
     html += '<div class="menu-sub">Schwierigkeit wählen</div><div class="menu-buttons">';
@@ -1484,6 +1485,8 @@ function renderMenu() {
         renderMenuSoon();
       } else if (act === "load") {
         if (loadGame()) closeMenu();
+      } else if (act === "versions") {
+        window.location.href = "versionen/index.html";
       } else if (act === "delete") {
         writeStorage(SAVE_KEY, null);
         renderMenu();

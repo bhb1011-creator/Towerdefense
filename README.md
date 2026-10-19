@@ -67,6 +67,16 @@ Jeder Turm hat **3 Ausbauwege mit je 5 Stufen**. Höchstens **5-2-0** ist erlaub
 
 Unverbesserte Türme reichen ab den mittleren Wellen nicht mehr aus. Upgrades lohnen sich.
 
+## Alle Versionen
+
+Im Ordner `versionen/` liegen alle bisherigen Entwicklungsstufen als eigene, spielbare Spiele. `versionen/index.html` öffnen (oder im Hauptmenü auf „📜 Alle Versionen“ klicken) – dort gibt es eine Übersicht mit Vorschaubildern:
+
+1. Einfaches 2D-Spiel
+2. 2D mit Detailkarte
+3. 3D-Landschaft
+4. Chromecore-Sci-Fi-Stadt
+5. Retro-Synthwave (aktuell)
+
 ## Dateien
 
 - `index.html` – Seitenaufbau
