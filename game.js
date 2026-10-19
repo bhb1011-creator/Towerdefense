@@ -140,7 +140,7 @@ function mulberry32(a) {
 }
 
 // ---------- Weg vorberechnen (Ecken abgerundet) ----------
-function roundedPath(waypoints, radius = TILE / 2, steps = 6) {
+function roundedPath(waypoints, radius = TILE * 0.3, steps = 5) {
   const pts = waypoints.map(([c, r]) => ({ x: c * TILE + TILE / 2, y: r * TILE + TILE / 2 }));
   const out = [pts[0]];
   for (let i = 1; i < pts.length - 1; i++) {
