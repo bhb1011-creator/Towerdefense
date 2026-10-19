@@ -3,24 +3,27 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Tower Defense 3D</title>
+  <title>Neo-City Defense</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h1>Tower Defense 3D</h1>
+  <h1>Neo-City Defense</h1>
 
   <div id="hud">
-    <span>❤️ Leben: <b id="lives">20</b></span>
-    <span>💰 Gold: <b id="gold">100</b></span>
-    <span>🌊 Welle: <b id="wave">0</b></span>
+    <span class="stat">❤️ Leben <b id="lives">20</b></span>
+    <span class="stat">💰 Gold <b id="gold">0</b></span>
+    <span class="stat">🌊 Welle <b id="wave">0</b></span>
     <button id="startWave">Welle starten</button>
     <button id="speed">Tempo: 1x</button>
-    <button id="resetCamera">🎥 Kamera zurücksetzen</button>
+    <button id="resetCamera">🎥 Kamera</button>
   </div>
 
-  <div id="view">
-    <div id="overlay" hidden>GAME OVER</div>
-    <div id="controlsHint">Linke Maustaste ziehen: drehen · Rechte Maustaste: verschieben · Mausrad: zoomen</div>
+  <div id="viewFrame">
+    <div id="view">
+      <div id="banner"></div>
+      <div id="overlay" hidden><span>GAME OVER</span></div>
+      <div id="controlsHint">Linke Maustaste ziehen: drehen · Rechte Maustaste: verschieben · Mausrad: zoomen</div>
+    </div>
   </div>
 
   <div id="panel">
@@ -34,6 +37,14 @@
 
   <script src="lib/three.min.js"></script>
   <script src="lib/OrbitControls.js"></script>
+  <script src="lib/RoundedBoxGeometry.js"></script>
+  <script src="lib/CopyShader.js"></script>
+  <script src="lib/LuminosityHighPassShader.js"></script>
+  <script src="lib/EffectComposer.js"></script>
+  <script src="lib/RenderPass.js"></script>
+  <script src="lib/ShaderPass.js"></script>
+  <script src="lib/MaskPass.js"></script>
+  <script src="lib/UnrealBloomPass.js"></script>
   <script src="scene.js"></script>
   <script src="game.js"></script>
 </body>

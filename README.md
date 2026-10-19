@@ -1,6 +1,6 @@
-# Tower Defense 3D
+# Neo-City Defense
 
-Ein 3D-Tower-Defense-Spiel im Browser – HTML, CSS und JavaScript mit [Three.js](https://threejs.org/) für die 3D-Grafik.
+Ein 3D-Tower-Defense-Spiel im Chromecore-Sci-Fi-Stil – HTML, CSS und JavaScript mit [Three.js](https://threejs.org/) für die 3D-Grafik.
 
 ## Starten
 
@@ -12,58 +12,61 @@ Ein 3D-Tower-Defense-Spiel im Browser – HTML, CSS und JavaScript mit [Three.js
 - **Rechte Maustaste ziehen:** Kamera verschieben
 - **Mausrad:** zoomen
 - **Touch:** ein Finger dreht, zwei Finger zoomen und verschieben
-- **🎥 Kamera zurücksetzen:** zurück zur Übersicht
+- **🎥 Kamera:** zurück zur Übersicht
 
 ## Spielen
 
-- **Turm bauen:** Turm unten auswählen (oder Taste `1`–`3`) und auf ein freies Grasfeld klicken (kurz klicken, nicht ziehen).
+- **Turm bauen:** Turm unten auswählen (oder Taste `1`–`4`) und auf eine freie Bauplatte klicken (kurz klicken, nicht ziehen).
 - **Welle starten:** Button „Welle starten“ oder `Leertaste`.
 - **Turm verbessern/verkaufen:** Auf einen gebauten Turm klicken.
 - **Tempo:** 1x / 2x / 3x umschalten.
 
-Die Gegner kommen aus zwei Höhlen und laufen auf zwei Wegen, die sich in der Mitte zu einem Weg vereinen und zur Burg führen. Erreicht ein Gegner die Burg, verlierst du Leben (große Gegner kosten mehr). Bei 0 Leben ist das Spiel vorbei.
+Die Gegner kommen aus zwei Portalen, laufen auf zwei Straßen, die sich in der Mitte vereinen, und wollen durch das Stadttor. Erreicht ein Gegner das Tor, verlierst du Leben (große Gegner kosten mehr). Bei 0 Leben ist das Spiel vorbei.
+
+**Ziel:** 30 Wellen überstehen. In Welle 30 kommt der Endboss, der **Omega-Koloss**. Wer ihn besiegt, hat gewonnen.
 
 ### Karte
 
-- **Seen:** Hier kann nie gebaut werden.
-- **Bäume (15 💰) und Felsen (30 💰):** blockieren das Feld, können aber angeklickt und entfernt werden.
+Eine schwebende Plattform mitten in einer Sci-Fi-Stadt mit Hochhäusern, LED-Leisten, Holo-Werbetafeln und fliegenden Autos.
+
+- **Energiebecken:** Hier kann nie gebaut werden.
+- **Holo-Kioske (15 💰) und Frachtcontainer (30 💰):** blockieren das Feld, können aber angeklickt und entfernt werden.
 
 ### Türme
 
-| Turm      | Kosten | Besonderheit                               |
-|-----------|--------|--------------------------------------------|
-| Pfeilturm | 50     | Schnelle Einzelschüsse                     |
-| Kanone    | 90     | Langsam, Flächenschaden, gut gegen Panzer  |
-| Frostturm | 70     | Verlangsamt Gegner                         |
+| Turm         | Kosten | Besonderheit                                         | Ausbaupfade |
+|--------------|--------|------------------------------------------------------|-------------|
+| Laserturm    | 50     | Schnelle Einzelschüsse                               | Reichweite, Schaden |
+| Plasmawerfer | 90     | Langsam, Flächenschaden, gut gegen Panzerung         | Reichweite, Schaden |
+| Kryoturm     | 70     | Verlangsamt Gegner                                   | Reichweite, Schaden |
+| Raumstation  | 220    | Schickt Raumschiffe vom Stadttor die Straße entlang | Schiffsleben, Häufigkeit, Explosionskraft |
 
-Jeder Turm hat **zwei Ausbaupfade**, jeweils bis Stufe 3:
+Jeder Ausbaupfad geht bis Stufe 3. Die Stufen siehst du als leuchtende Kugeln am Turmsockel.
 
-- **Reichweite** (blau): +18 % Reichweite pro Stufe (Frost: längere Verlangsamung, Kanone: größere Explosion)
-- **Schaden** (rot): +45 % Schaden pro Stufe (Frost: stärkere Verlangsamung)
-
-Die Stufen siehst du als blaue und rote Steine am Turmsockel.
+**Raumstation:** wird ab **Welle 8** freigeschaltet, ihre Verbesserungen ab **Welle 12**. Die Raumschiffe starten am Stadttor und fliegen den Gegnern entgegen. Treffen sie auf Gegner, halten sie diese auf und rammen sie. Wird ein Schiff zerstört (oder erreicht es das Ende der Straße), explodiert es und beschädigt alle Gegner in der Nähe.
 
 ### Gegner
 
-Manche Gegner tragen kleinere Gegner in sich, die beim Tod freigesetzt werden:
+Gegner haben **keine Lebensanzeige**. Stattdessen sieht man den Schaden: Sie verfärben sich, glühen rot, sprühen Funken, rauchen und verlieren Panzerteile. Ihre Augen wechseln von Cyan zu Rot.
 
-| Gegner   | Fähigkeit                       | Enthält               |
-|----------|---------------------------------|-----------------------|
-| Schleim  | –                               | 2× Winzling           |
-| Flitzer  | sehr schnell                    | –                     |
-| Käfer    | gepanzert (−3 Schaden/Treffer)  | 3× Flitzer            |
-| Geist    | immun gegen Frost               | 3× Irrlicht           |
-| Heiler   | heilt Gegner in der Nähe        | 2× Winzling           |
-| Golem    | Boss, stark gepanzert (jede 5. Welle) | 2× Käfer, 2× Schleim |
-| Winzling | klein und flink                 | –                     |
-| Irrlicht | blitzschnell, immun gegen Frost | –                     |
+Manche Gegner tragen kleinere Gegner in sich, die beim Zerstören freigesetzt werden:
 
-Im Spiel gibt es unter der Karte eine aufklappbare Gegner-Übersicht.
+| Gegner          | Fähigkeit                                  | Enthält                    |
+|-----------------|--------------------------------------------|----------------------------|
+| Flüssigmetall   | –                                          | 2× Nanobot                 |
+| Späher-Gleiter  | sehr schnell                               | –                          |
+| Panzer-Crawler  | gepanzert (−3 Schaden pro Treffer)         | 3× Späher-Gleiter          |
+| Tarndrohne      | immun gegen Kälte                          | 3× Plasmafunke             |
+| Reparaturdrohne | repariert Gegner in der Nähe               | 2× Nanobot                 |
+| Titan-Mech      | schwer gepanzert (jede 5. Welle)           | 2× Panzer-Crawler, 2× Flüssigmetall |
+| Omega-Koloss    | Endboss in Welle 30                        | 3× Titan-Mech, 4× Panzer-Crawler |
+| Nanobot         | klein und flink                            | –                          |
+| Plasmafunke     | blitzschnell, immun gegen Kälte            | –                          |
 
 ## Dateien
 
 - `index.html` – Seitenaufbau
-- `style.css` – Aussehen der Seite
-- `game.js` – Spiellogik. Oben in der Datei lassen sich Wege (`PATHS`), Seen (`LAKES`), Hindernisse (`OBSTACLES`), Türme (`TOWER_TYPES`), Ausbaupfade (`UPGRADE_PATHS`) und Gegner (`ENEMY_TYPES`) leicht anpassen.
-- `scene.js` – 3D-Darstellung: Gelände, Modelle für Türme, Gegner und Geschosse, Effekte und Kamera
-- `lib/` – Three.js 0.147 und OrbitControls (MIT-Lizenz, siehe `lib/three-LICENSE`)
+- `style.css` – Chrom-Look der Oberfläche
+- `game.js` – Spiellogik. Oben in der Datei lassen sich Wege (`PATHS`), Energiebecken (`POOLS`), Hindernisse (`OBSTACLES`), Türme (`TOWER_TYPES`), Ausbaupfade (`UPGRADE_PATHS`) und Gegner (`ENEMY_TYPES`) leicht anpassen.
+- `scene.js` – 3D-Darstellung: Stadt, Spielfeld, Modelle für Türme, Gegner, Raumschiffe und Geschosse, Effekte, Leuchten (Bloom) und Kamera
+- `lib/` – Three.js 0.147 mit OrbitControls, RoundedBoxGeometry und den Bloom-Nachbearbeitungsdateien (MIT-Lizenz, siehe `lib/three-LICENSE`)
