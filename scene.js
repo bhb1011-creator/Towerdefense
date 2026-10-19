@@ -17,7 +17,7 @@ const View = (() => {
   let obstacleMeshes = new Map();
   let animated = []; // { obj, fn(obj, time) } für Animationen der Karte/Stadt
   let roadDashes = null;
-  let hoverMesh, selectMesh, rangeGroup, particleMesh, sparkles, holoFill, holoEdge;
+  let hoverMesh, selectMesh, rangeGroup, previewRing, particleMesh, sparkles, holoFill, holoEdge;
   const raycaster = new THREE.Raycaster();
   const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -PAD_TOP);
   const pointer = new THREE.Vector2();
@@ -26,6 +26,7 @@ const View = (() => {
   const enemyObjs = new Map();
   const shipObjs = new Map();
   const projectileObjs = new Map();
+  const beamObjs = new Map();
   const ringObjs = new Map();
   const textObjs = new Map();
   const textTextures = new Map();
@@ -285,7 +286,7 @@ const View = (() => {
 
     // Licht: warme Abendsonne von der Meerseite, kühles Neonlicht von der Stadt
     scene.add(new THREE.HemisphereLight("#9a6bff", "#2a0b30", 0.6));
-    const sun = new THREE.DirectionalLight("#ffb08a", 0.85);
+    const sun = new THREE.DirectionalLight("#ff9a6e", 0.8);
     sun.position.set(-5, 10, -16);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
@@ -326,8 +327,14 @@ const View = (() => {
     rangeGroup.visible = false;
     scene.add(rangeGroup);
 
-    // Partikel als kleine, leuchtende Würfel
-    particleMesh = new THREE.InstancedMesh(G("box", () => new THREE.BoxGeometry(1, 1, 1)), new THREE.MeshBasicMaterial(), MAX_PARTICLES);
+    previewRing = new THREE.Mesh(new THREE.RingGeometry(0.97, 1, 96).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({
+      color: tmpColor.set("#ff8ae6").multiplyScalar(1.6), transparent: true, opacity: 0.9, depthWrite: false,
+    }));
+    previewRing.visible = false;
+    scene.add(previewRing);
+
+    // Partikel als kleine, runde Leuchtkugeln
+    particleMesh = new THREE.InstancedMesh(G("particle", () => new THREE.SphereGeometry(1, 6, 4)), new THREE.MeshBasicMaterial(), MAX_PARTICLES);
     particleMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     particleMesh.setColorAt(0, tmpColor.set("#ffffff"));
     particleMesh.frustumCulled = false;
@@ -410,12 +417,15 @@ const View = (() => {
       const moved = Math.hypot(ev.clientX - down.x, ev.clientY - down.y);
       if (down.button === 0 && moved < 6) {
         const tile = pickTile(ev);
-        if (tile) handleTileClick(tile.col, tile.row, ev.shiftKey);
+        if (tile) handleTileClick(tile.col, tile.row, ev.shiftKey, tile.px, tile.py);
       }
       down = null;
     });
     el.addEventListener("pointermove", (ev) => {
-      if (ev.pointerType === "mouse") state.hoverTile = pickTile(ev);
+      if (ev.pointerType === "mouse") {
+        state.hoverTile = pickTile(ev);
+        state.hoverPoint = state.hoverTile ? { x: state.hoverTile.px, y: state.hoverTile.py } : null;
+      }
     });
     el.addEventListener("pointerleave", () => {
       state.hoverTile = null;
@@ -432,7 +442,7 @@ const View = (() => {
     const col = Math.floor(hit.x + COLS / 2);
     const row = Math.floor(hit.z + ROWS / 2);
     if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return null;
-    return { col, row };
+    return { col, row, px: (hit.x + COLS / 2) * TILE, py: (hit.z + ROWS / 2) * TILE };
   }
 
   // ---------- Die Stadt rund um das Spielfeld (einmalig) ----------
@@ -542,7 +552,7 @@ const View = (() => {
     waveTex.wrapS = waveTex.wrapT = THREE.RepeatWrapping;
     waveTex.repeat.set(30, 40);
     const seaMat = new THREE.MeshStandardMaterial({
-      color: "#2a0f55", metalness: 1, roughness: 0.18, normalMap: waveTex, normalScale: new THREE.Vector2(0.35, 0.35),
+      color: "#3a1048", metalness: 0.95, roughness: 0.26, normalMap: waveTex, normalScale: new THREE.Vector2(0.35, 0.35),
     });
     const sea = new THREE.Mesh(new THREE.PlaneGeometry(700, 300).rotateX(-Math.PI / 2), seaMat);
     sea.position.set(0, GROUND_Y - 0.08, SHORE_Z - 150);
@@ -556,7 +566,7 @@ const View = (() => {
         map: canvasTexture(64, 256, (g, w, h) => {
           const grad = g.createLinearGradient(0, 0, w, 0);
           grad.addColorStop(0, "rgba(255,90,170,0)");
-          grad.addColorStop(0.5, "rgba(255,150,200,0.55)");
+          grad.addColorStop(0.5, "rgba(255,110,120,0.32)");
           grad.addColorStop(1, "rgba(255,90,170,0)");
           g.fillStyle = grad;
           g.fillRect(0, 0, w, h);
@@ -596,7 +606,7 @@ const View = (() => {
     });
 
     // Strand, Schaumkante und heranrollende Welle
-    const beach = mesh(new THREE.PlaneGeometry(700, 5).rotateX(-Math.PI / 2), metal("#241037", 0.6, 0.3), { receive: true });
+    const beach = mesh(new THREE.PlaneGeometry(700, 5).rotateX(-Math.PI / 2), metal("#241037", 0.85, 0.2), { receive: true });
     beach.position.set(0, GROUND_Y - 0.01, SHORE_Z + 1.5);
     world.add(beach);
     const shorePts = [];
@@ -910,7 +920,7 @@ const View = (() => {
     // Glatter Metallboden mit Details (eine Fläche statt einzelner Platten)
     const floorTex = floorTextures(rng);
     const floor = mesh(new THREE.PlaneGeometry(COLS + FLOOR_MARGIN * 2, ROWS + FLOOR_MARGIN * 2).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({
-      map: floorTex.map, roughnessMap: floorTex.rough, roughness: 1, metalness: 0.55,
+      map: floorTex.map, roughnessMap: floorTex.rough, roughness: 1, metalness: 0.55, color: "#ffd9ee",
       emissive: "#ffffff", emissiveMap: floorTex.glow, emissiveIntensity: 1,
     }), { receive: true });
     floor.position.y = FLOOR_Y;
@@ -1466,28 +1476,6 @@ const View = (() => {
     burstStars(tileX(c), PAD_TOP + 0.4, tileZ(r), 8, "#ffffff");
   }
 
-  // ---------- Raumschiff-Modell (für Station und fliegende Schiffe) ----------
-  function makeShipModel(accent = "#ff4fd8") {
-    const g = new THREE.Group();
-    const hull = mesh(G("shipHull", () => new THREE.CapsuleGeometry(0.075, 0.3, 6, 14).rotateZ(Math.PI / 2)), chrome("#f2f4ff", 0.08), { cast: true });
-    const cockpit = mesh(G("shipCockpit", () => new THREE.SphereGeometry(0.06, 12, 8)), neon("#29e6ff", 2.2));
-    cockpit.position.set(0.12, 0.05, 0);
-    cockpit.scale.set(1.4, 0.7, 0.9);
-    const wings = mesh(G("shipWings", () => new THREE.RoundedBoxGeometry(0.18, 0.02, 0.5, 2, 0.01)), chrome("#d8dcff", 0.12));
-    wings.position.x = -0.04;
-    g.add(hull, cockpit, wings);
-    for (const s of [-1, 1]) {
-      const tip = mesh(G("shipTip", () => new THREE.SphereGeometry(0.025, 8, 6)), neon(accent, 3));
-      tip.position.set(-0.04, 0, s * 0.25);
-      g.add(tip);
-    }
-    const engine = glowSprite("#ff9a3d", 0.3);
-    engine.position.x = -0.24;
-    g.add(engine);
-    g.userData.engine = engine;
-    return g;
-  }
-
   // ---------- Türme ----------
   function makeTower(t) {
     const type = TOWER_TYPES[t.type];
@@ -1495,7 +1483,7 @@ const View = (() => {
     const head = new THREE.Group();
     const gun = new THREE.Group();
     head.add(gun);
-    const ud = { head, gun, pips: new THREE.Group(), pipKey: null, spin: [] };
+    const ud = { head, gun, pips: new THREE.Group(), extras: new THREE.Group(), pipKey: null, spin: [] };
 
     if (t.type === "station") {
       const base = mesh(G("stationBase", () => new THREE.CylinderGeometry(0.4, 0.44, 0.22, 36)), chrome("#e8ecff", 0.12), { cast: true, receive: true });
@@ -1519,14 +1507,16 @@ const View = (() => {
       g.add(idle);
       ud.station = { ring, beacon, idle, dish };
     } else {
-      const base = mesh(G("towerBase", () => new THREE.CylinderGeometry(0.3, 0.38, 0.36, 32)), chrome("#e8ecff", 0.12), { cast: true, receive: true });
-      base.position.y = PAD_TOP + 0.18;
-      const ring = mesh(G("towerRing", () => new THREE.TorusGeometry(0.33, 0.025, 8, 40).rotateX(Math.PI / 2)), neon(type.color, 2.6));
-      ring.position.y = PAD_TOP + 0.34;
+      const mortar = t.type === "mortar";
+      const base = mesh(G(mortar ? "mortarBase" : "towerBase", () => mortar ? new THREE.CylinderGeometry(0.36, 0.42, 0.28, 32) : new THREE.CylinderGeometry(0.3, 0.38, 0.36, 32)),
+        chrome(mortar ? "#fff2c4" : "#e8ecff", 0.12), { cast: true, receive: true });
+      base.position.y = PAD_TOP + (mortar ? 0.14 : 0.18);
+      const ring = mesh(G(mortar ? "mortarRing" : "towerRing", () => new THREE.TorusGeometry(mortar ? 0.39 : 0.33, 0.025, 8, 40).rotateX(Math.PI / 2)), neon(type.color, 2.6));
+      ring.position.y = PAD_TOP + (mortar ? 0.26 : 0.34);
       const foot = mesh(G("towerFoot", () => new THREE.TorusGeometry(0.39, 0.02, 8, 40).rotateX(Math.PI / 2)), neon(type.color, 1.8));
       foot.position.y = PAD_TOP + 0.02;
       g.add(base, ring, foot);
-      head.position.y = PAD_TOP + 0.42;
+      head.position.y = PAD_TOP + (mortar ? 0.3 : 0.42);
 
       if (t.type === "laser") {
         const body = mesh(G("laserBody", () => new THREE.SphereGeometry(0.19, 24, 16)), chrome("#d8f7ff", 0.08), { cast: true });
@@ -1557,7 +1547,7 @@ const View = (() => {
           gun.add(coil);
         }
         gun.rotation.z = 0.18;
-      } else {
+      } else if (t.type === "cryo") {
         const crystal = mesh(G("cryoCrystal", () => new THREE.OctahedronGeometry(0.19, 0)), new THREE.MeshPhysicalMaterial({
           color: "#e6dcff", metalness: 0.4, roughness: 0.05, iridescence: 1, iridescenceIOR: 1.8,
           emissive: "#7c4dff", emissiveIntensity: 0.9, clearcoat: 1, flatShading: true,
@@ -1574,9 +1564,34 @@ const View = (() => {
           head.add(orbit);
           ud.spin.push(orbit);
         }
+      } else if (mortar) {
+        const dome = mesh(G("mortarDome", () => new THREE.SphereGeometry(0.27, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2)), chrome("#ffe6a0", 0.1), { cast: true });
+        head.add(dome);
+        gun.position.y = 0.12;
+        const barrel = mesh(G("mortarBarrel", () => new THREE.CylinderGeometry(0.1, 0.13, 0.5, 20).rotateZ(-Math.PI / 2)), metal("#2a2d44", 0.25, 1), { cast: true });
+        barrel.position.x = 0.2;
+        const muzzle = mesh(G("mortarMuzzle", () => new THREE.TorusGeometry(0.11, 0.025, 8, 24).rotateY(Math.PI / 2)), neon("#ffd740", 3));
+        muzzle.position.x = 0.45;
+        gun.add(barrel, muzzle);
+        gun.rotation.z = 0.95; // steil nach oben
+        // Fadenkreuz am Zielpunkt
+        const marker = new THREE.Group();
+        const markMat = new THREE.MeshBasicMaterial({ color: tmpColor.set("#ffd740").multiplyScalar(1.6), transparent: true, opacity: 0.35, depthWrite: false });
+        marker.add(new THREE.Mesh(G("crossRing", () => new THREE.RingGeometry(0.42, 0.48, 40).rotateX(-Math.PI / 2)), markMat));
+        for (let i = 0; i < 4; i++) {
+          const tick = new THREE.Mesh(G("crossTick", () => new THREE.PlaneGeometry(0.06, 0.3).rotateX(-Math.PI / 2)), markMat);
+          const a = (i / 4) * Math.PI * 2;
+          tick.position.set(Math.cos(a) * 0.6, 0, Math.sin(a) * 0.6);
+          tick.rotation.y = -a + Math.PI / 2;
+          marker.add(tick);
+        }
+        marker.children[0].userData.ownMaterial = true;
+        ud.marker = marker;
+        ud.markMat = markMat;
+        g.add(marker);
       }
     }
-    g.add(head, ud.pips);
+    g.add(head, ud.pips, ud.extras);
     g.position.set(tileX(t.col), 0, tileZ(t.row));
     g.userData = ud;
     burstStars(tileX(t.col), PAD_TOP + 0.5, tileZ(t.row), 10, type.color);
@@ -1597,384 +1612,396 @@ const View = (() => {
       st.idle.visible = t.recoil < 0.3;
     } else {
       ud.head.rotation.y = t.type === "cryo" ? 0 : -t.angle;
-      ud.gun.position.x = -t.recoil * 0.07;
+      ud.gun.position.x = -t.recoil * (t.type === "mortar" ? 0.04 : 0.07);
       if (ud.crystal) {
         ud.crystal.rotation.y = time * 1.5;
         ud.crystal.position.y = 0.34 + Math.sin(time * 2 + t.col) * 0.05;
         ud.crystal.material.emissiveIntensity = 0.7 + t.recoil * 1.6;
       }
       ud.spin.forEach((o, i) => { o.rotation.z = time * (i ? -1.6 : 1.2); });
+      if (ud.marker) {
+        const aim = state.aiming === t && state.hoverPoint ? state.hoverPoint : t.aim;
+        ud.marker.position.set(wx(aim.x) - g.position.x, ROAD_Y + 0.03, wz(aim.y) - g.position.z);
+        ud.marker.rotation.y = time * 0.8;
+        const active = state.aiming === t || (state.selected && state.selected.tower === t);
+        ud.markMat.opacity = active ? 0.95 : 0.3;
+        ud.marker.scale.setScalar((active ? 1 : 0.8) * (1 + Math.sin(time * 4) * 0.05));
+        if (t.priority !== "point" && towerStats(t).autoTarget && !active) ud.markMat.opacity = 0.12;
+      }
     }
-    // Ausbaustufen als leuchtende Kugeln am Sockel
-    const key = JSON.stringify(t.levels);
+    for (const x of ud.extras.children) if (x.userData.spin) x.rotation.y = time * x.userData.spin;
+    // Ausbaustufen als leuchtende Kugeln am Sockel, ab Stufe 3 und 5 zusätzlicher Schmuck
+    const key = t.levels.join("");
     if (ud.pipKey !== key) {
-      if (ud.pipKey !== null) burstStars(g.position.x, PAD_TOP + 0.6, g.position.z, 12, "#ffffff");
+      if (ud.pipKey !== null) burstStars(g.position.x, PAD_TOP + 0.6, g.position.z, 14, "#ffffff");
       ud.pipKey = key;
-      while (ud.pips.children.length) ud.pips.remove(ud.pips.children[0]);
-      const paths = TOWER_TYPES[t.type].upgrades;
-      paths.forEach((p, pi) => {
-        const center = Math.PI / 2 + (pi - (paths.length - 1) / 2) * 1.2;
-        for (let i = 0; i < t.levels[p]; i++) {
-          const a = center + (i - 1) * 0.28;
-          const pip = mesh(G("pip", () => new THREE.SphereGeometry(0.035, 10, 8)), neon(UPGRADE_PATHS[p].color, 3));
-          const rad = t.type === "station" ? 0.45 : 0.4;
-          pip.position.set(Math.cos(a) * rad, PAD_TOP + 0.08, Math.sin(a) * rad);
+      for (const grp of [ud.pips, ud.extras]) while (grp.children.length) grp.remove(grp.children[0]);
+      const rad = t.type === "station" ? 0.46 : 0.41;
+      t.levels.forEach((lvl, p) => {
+        const center = Math.PI / 2 + (p - 1) * 1.15;
+        for (let i = 0; i < lvl; i++) {
+          const a = center + (i - (lvl - 1) / 2) * 0.2;
+          const pip = mesh(G("pip", () => new THREE.SphereGeometry(0.03, 10, 8)), neon(PATH_COLORS[p], 3));
+          pip.position.set(Math.cos(a) * rad, PAD_TOP + 0.07, Math.sin(a) * rad);
           ud.pips.add(pip);
         }
       });
+      const top = Math.max(...t.levels);
+      const color = TOWER_TYPES[t.type].color;
+      if (top >= 3) {
+        const band = mesh(G("tierBand", () => new THREE.TorusGeometry(0.36, 0.018, 8, 40).rotateX(Math.PI / 2)), neon(color, 3));
+        band.position.y = PAD_TOP + 0.2;
+        ud.extras.add(band);
+      }
+      if (top >= 5) {
+        const crown = mesh(G("tierCrown", () => new THREE.TorusGeometry(0.22, 0.02, 8, 6).rotateX(Math.PI / 2)), neon("#ffffff", 3.5));
+        crown.position.y = PAD_TOP + 1.0;
+        crown.userData.spin = 1.5;
+        const halo = glowSprite(color, 1.2);
+        halo.position.y = PAD_TOP + 1.0;
+        ud.extras.add(crown, halo);
+      }
     }
   }
 
   // ---------- Gegner ----------
-  // Gegner verändern sich mit dem Schaden: Farbe, Funken, Rauch, abfallende Teile
-  function makeEnemy(e) {
-    const d = e.def;
-    const r = (d.radius / TILE) * (e.type === "omega" ? 1.15 : 1.5);
-    const root = new THREE.Group();
-    const model = new THREE.Group();
-    root.add(model);
-    const bodyMat = new THREE.MeshStandardMaterial({ color: d.color, metalness: 0.85, roughness: 0.2 });
-    const eyeMat = new THREE.MeshStandardMaterial({ color: "#000000", emissive: "#29e6ff", emissiveIntensity: 2.6 });
-    const ud = { model, r, bodyMat, eyeMat, baseColor: new THREE.Color(d.color), breaks: [], parts: {}, phase: Math.random() * 10, lastK: 1 };
-    const addBreak = (m, at) => ud.breaks.push({ mesh: m, at, broken: false });
-    const visor = (x, y, z, s = 1) => {
-      const v = mesh(G("visor", () => new THREE.SphereGeometry(1, 12, 8)), eyeMat);
-      v.scale.set(r * 0.16 * s, r * 0.14 * s, r * 0.16 * s);
-      v.position.set(x, y, z);
-      model.add(v);
-      return v;
-    };
+  function bodyMaterial(color, opts = {}) {
+    const m = new THREE.MeshStandardMaterial({ color, metalness: 0.85, roughness: 0.2, ...opts });
+    return m;
+  }
 
-    switch (e.type) {
-      case "nanobot": {
-        const body = mesh(G("sph16", () => new THREE.SphereGeometry(1, 16, 12)), bodyMat, { cast: true });
-        body.scale.setScalar(r);
-        body.position.y = r * 1.1;
-        visor(r * 0.85, r * 1.2, 0, 1.5);
-        const ant = mesh(G("nanoAnt", () => new THREE.CylinderGeometry(0.008, 0.008, 1, 4)), metal("#c0c8e8", 0.2, 1));
-        ant.scale.y = r * 1.2;
-        ant.position.set(-r * 0.2, r * 2.4, 0);
-        const tip = mesh(G("sph8", () => new THREE.SphereGeometry(1, 8, 6)), neon("#ff4fd8", 3));
-        tip.scale.setScalar(r * 0.18);
-        tip.position.set(-r * 0.2, r * 3, 0);
-        model.add(body, ant, tip);
-        addBreak(ant, 0.5);
-        addBreak(tip, 0.5);
-        ud.parts.hover = r * 0.1;
-        break;
-      }
-      case "scout": {
-        const body = mesh(G("scoutBody", () => new THREE.CapsuleGeometry(1, 2.2, 6, 14).rotateZ(Math.PI / 2)), bodyMat, { cast: true });
-        body.scale.setScalar(r * 0.55);
-        body.position.y = r * 1.3;
-        model.add(body);
-        for (const s of [-1, 1]) {
-          const fin = mesh(G("fin", () => new THREE.RoundedBoxGeometry(1, 0.12, 0.5, 2, 0.05)), chrome("#fff6c0", 0.1));
-          fin.scale.setScalar(r);
-          fin.position.set(-r * 0.3, r * 1.3, s * r * 0.75);
-          fin.rotation.y = s * 0.4;
-          model.add(fin);
-          addBreak(fin, s > 0 ? 0.6 : 0.35);
-        }
-        const thruster = glowSprite("#ff9a3d", r * 2.2);
-        thruster.position.set(-r * 1.3, r * 1.3, 0);
-        model.add(thruster);
-        ud.parts.thruster = thruster;
-        visor(r * 1.05, r * 1.42, 0, 1.3);
-        ud.parts.hover = r * 0.3;
-        break;
-      }
-      case "spark": {
-        const core = mesh(G("ico1", () => new THREE.IcosahedronGeometry(1, 1)), neon("#bff9ff", 3));
-        core.scale.setScalar(r);
-        core.position.y = r * 2.2;
-        const glow = glowSprite(d.color, r * 7);
-        glow.position.y = r * 2.2;
-        model.add(core, glow);
-        ud.parts.spark = { core, glow };
-        break;
-      }
-      case "liquid": {
-        bodyMat.transparent = true;
-        bodyMat.opacity = 0.72;
-        bodyMat.roughness = 0.05;
-        const body = mesh(G("sph24", () => new THREE.SphereGeometry(1, 24, 16)), bodyMat, { cast: true });
-        body.scale.setScalar(r);
-        body.position.y = r;
-        model.add(body);
-        ud.parts.blob = body;
-        for (let i = 0; i < 2; i++) {
-          const kid = mesh(G("sph12", () => new THREE.SphereGeometry(1, 12, 8)), chrome("#d8ffe8", 0.1));
-          kid.scale.setScalar(r * 0.3);
-          kid.position.set(0, r * 0.8, (i - 0.5) * r * 0.75);
-          model.add(kid);
-        }
-        visor(r * 0.8, r * 1.35, r * 0.3, 1);
-        visor(r * 0.8, r * 1.35, -r * 0.3, 1);
-        break;
-      }
-      case "crawler": {
-        const shell = mesh(G("hemi", () => new THREE.SphereGeometry(1, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2)), bodyMat, { cast: true });
-        shell.scale.set(r * 1.15, r * 0.8, r * 0.95);
-        shell.position.y = r * 0.3;
-        model.add(shell);
-        for (let i = 0; i < 3; i++) {
-          const plate = mesh(G("plate", () => new THREE.RoundedBoxGeometry(1, 0.25, 1, 2, 0.1)), chrome("#d6dcf0", 0.15));
-          plate.scale.set(r * 0.55, r * 0.6, r * 1.3);
-          plate.position.set((i - 1) * r * 0.55, r * 1.05 - Math.abs(i - 1) * r * 0.12, 0);
-          model.add(plate);
-          addBreak(plate, [0.75, 0.5, 0.25][i]);
-        }
-        const head = mesh(G("sph12", () => new THREE.SphereGeometry(1, 12, 8)), metal("#2a2d44", 0.3, 1));
-        head.scale.setScalar(r * 0.45);
-        head.position.set(r * 1.1, r * 0.5, 0);
-        model.add(head);
-        visor(r * 1.45, r * 0.6, 0, 1.4);
-        ud.parts.legs = [];
-        for (const i of [-1, 1]) {
-          for (const side of [-1, 1]) {
-            const leg = mesh(G("leg", () => new THREE.BoxGeometry(0.08, 0.08, 1)), metal("#c0c8e8", 0.3, 1));
-            leg.scale.set(r, r, r * 0.8);
-            leg.position.set(i * r * 0.5, r * 0.25, side * r * 0.95);
-            leg.userData = { i, side };
-            model.add(leg);
-            ud.parts.legs.push(leg);
-          }
-        }
-        break;
-      }
-      case "cloak": {
-        const holoMat = new THREE.MeshStandardMaterial({ color: "#1a2a6a", emissive: d.color, emissiveIntensity: 1.3, transparent: true, opacity: 0.55, metalness: 0.5, roughness: 0.2 });
-        ud.holoMat = holoMat;
-        const body = mesh(G("sph16", () => new THREE.SphereGeometry(1, 16, 12)), bodyMat, { cast: true });
-        body.scale.set(r * 0.7, r * 0.55, r * 0.7);
-        body.position.y = r * 1.5;
-        const ring = mesh(G("cloakRing", () => new THREE.TorusGeometry(1, 0.12, 8, 32).rotateX(Math.PI / 2)), holoMat);
-        ring.scale.setScalar(r);
-        ring.position.y = r * 1.5;
-        const cone = mesh(G("cloakCone", () => new THREE.ConeGeometry(1, 1.6, 20, 1, true)), holoMat);
-        cone.scale.setScalar(r * 0.8);
-        cone.rotation.x = Math.PI;
-        cone.position.y = r * 0.65;
-        model.add(body, ring, cone);
-        for (const s of [-1, 1]) {
-          const fin = mesh(G("fin", () => new THREE.RoundedBoxGeometry(1, 0.12, 0.5, 2, 0.05)), holoMat);
-          fin.scale.setScalar(r * 0.8);
-          fin.position.set(0, r * 1.5, s * r * 1.15);
-          model.add(fin);
-          addBreak(fin, s > 0 ? 0.66 : 0.33);
-        }
-        visor(r * 0.6, r * 1.55, 0, 1.4);
-        ud.parts.ring = ring;
-        ud.parts.float = true;
-        break;
-      }
-      case "repair": {
-        const body = mesh(G("sph16", () => new THREE.SphereGeometry(1, 16, 12)), bodyMat, { cast: true });
-        body.scale.setScalar(r);
-        body.position.y = r * 1.3;
-        const rotor = mesh(G("rotor", () => new THREE.TorusGeometry(1, 0.08, 6, 32).rotateX(Math.PI / 2)), neon("#69f0ae", 2.4));
-        rotor.scale.setScalar(r * 1.25);
-        rotor.position.y = r * 2.15;
-        const crossA = mesh(G("crossA", () => new THREE.BoxGeometry(0.25, 0.8, 0.25)), neon("#e9fff2", 2.2));
-        const crossB = mesh(G("crossB", () => new THREE.BoxGeometry(0.25, 0.25, 0.8)), neon("#e9fff2", 2.2));
-        for (const c of [crossA, crossB]) {
-          c.scale.setScalar(r);
-          c.position.y = r * 2.75;
-        }
-        const aura = mesh(G("aura", () => new THREE.TorusGeometry(1, 0.05, 6, 40).rotateX(Math.PI / 2)), new THREE.MeshBasicMaterial({
-          color: "#69f0ae", transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false,
-        }));
-        aura.userData.ownMaterial = true;
-        aura.scale.setScalar(r * 1.6);
-        aura.position.y = 0.04;
-        model.add(body, rotor, crossA, crossB, aura);
-        for (const s of [-1, 1]) {
-          const arm = mesh(G("arm", () => new THREE.CapsuleGeometry(0.12, 0.6, 4, 8)), chrome("#ffe0f4", 0.1));
-          arm.scale.setScalar(r);
-          arm.position.set(r * 0.2, r * 0.9, s * r * 1.05);
-          arm.rotation.x = s * 0.5;
-          model.add(arm);
-          addBreak(arm, s > 0 ? 0.6 : 0.3);
-        }
-        visor(r * 0.85, r * 1.45, 0, 1.4);
-        Object.assign(ud.parts, { rotor, aura, cross: [crossA, crossB], hover: r * 0.15 });
-        break;
-      }
-      case "titan": {
-        const torso = mesh(G("torso", () => new THREE.RoundedBoxGeometry(1.3, 1.25, 1.1, 3, 0.25)), bodyMat, { cast: true });
-        torso.scale.setScalar(r);
-        torso.position.y = r * 1.45;
-        const head = mesh(G("titanHead", () => new THREE.RoundedBoxGeometry(0.6, 0.45, 0.6, 3, 0.15)), bodyMat, { cast: true });
-        head.scale.setScalar(r);
-        head.position.set(r * 0.15, r * 2.3, 0);
-        const core = mesh(G("sph12", () => new THREE.SphereGeometry(1, 12, 8)), neon("#ff8a3d", 3));
-        core.scale.setScalar(r * 0.22);
-        core.position.set(r * 0.66, r * 1.5, 0);
-        model.add(torso, head, core);
-        visor(r * 0.47, r * 2.33, 0, 1.6);
-        ud.parts.arms = [];
-        ud.parts.legs = [];
-        for (const s of [-1, 1]) {
-          const arm = mesh(G("arm", () => new THREE.CapsuleGeometry(0.12, 0.6, 4, 8)), chrome("#e8ecff", 0.12), { cast: true });
-          arm.scale.setScalar(r * 1.4);
-          arm.position.set(0, r * 1.3, s * r * 0.95);
-          arm.userData.side = s;
-          model.add(arm);
-          ud.parts.arms.push(arm);
-          const shoulder = mesh(G("plate", () => new THREE.RoundedBoxGeometry(1, 0.25, 1, 2, 0.1)), chrome("#c8d0ff", 0.12));
-          shoulder.scale.set(r * 0.55, r * 0.8, r * 0.5);
-          shoulder.position.set(0, r * 2.0, s * r * 0.9);
-          model.add(shoulder);
-          addBreak(shoulder, s > 0 ? 0.66 : 0.33);
-          const leg = mesh(G("titanLeg", () => new THREE.RoundedBoxGeometry(0.35, 0.8, 0.35, 2, 0.1)), metal("#3a3f5c", 0.3, 1));
-          leg.scale.setScalar(r);
-          leg.position.set(0, r * 0.4, s * r * 0.35);
-          leg.userData.side = s;
-          model.add(leg);
-          ud.parts.legs.push(leg);
-        }
-        ud.parts.mech = true;
-        break;
-      }
-      case "omega": {
-        const core = mesh(G("sph24", () => new THREE.SphereGeometry(1, 24, 16)), bodyMat, { cast: true });
-        core.scale.setScalar(r);
-        core.position.y = r * 1.4;
-        model.add(core);
-        const eye = mesh(G("sph16", () => new THREE.SphereGeometry(1, 16, 12)), eyeMat);
-        eye.scale.set(r * 0.25, r * 0.4, r * 0.4);
-        eye.position.set(r * 0.88, r * 1.45, 0);
-        model.add(eye);
-        ud.parts.rings = [];
-        for (let i = 0; i < 2; i++) {
-          const ring = mesh(G("omegaRing", () => new THREE.TorusGeometry(1, 0.06, 10, 64)), chrome(i ? "#ffd6f5" : "#d6f7ff", 0.06), { cast: true });
-          ring.scale.setScalar(r * (1.45 + i * 0.25));
-          ring.position.y = r * 1.4;
-          ring.rotation.x = Math.PI / 2 + (i ? 0.45 : -0.3);
-          model.add(ring);
-          ud.parts.rings.push(ring);
-        }
-        // Energieknoten, die nach und nach erlöschen und abfallen
-        for (let i = 0; i < 8; i++) {
-          const node = mesh(G("sph12", () => new THREE.SphereGeometry(1, 12, 8)), neon(i % 2 ? "#ff4fd8" : "#29e6ff", 3));
-          // Position und Größe in Ring-Koordinaten (der Ring ist skaliert)
-          const a = (i / 8) * Math.PI * 2;
-          node.scale.setScalar(0.12 / 1.45);
-          node.position.set(Math.cos(a), Math.sin(a), 0);
-          ud.parts.rings[0].add(node);
-          addBreak(node, 0.95 - i * 0.11);
-        }
-        for (let i = 0; i < 6; i++) {
-          const spike = mesh(G("spike", () => new THREE.ConeGeometry(0.12, 0.6, 10)), chrome("#ffffff", 0.08));
-          spike.scale.setScalar(r);
-          const a = (i / 6) * Math.PI * 2;
-          spike.position.set(Math.cos(a) * r * 0.95, r * 1.4 + Math.sin(a) * r * 0.95, 0);
-          spike.rotation.z = a - Math.PI / 2;
-          model.add(spike);
-          addBreak(spike, 0.8 - i * 0.13);
-        }
-        const glow = glowSprite("#ff4fd8", r * 5);
-        glow.position.y = r * 1.4;
-        model.add(glow);
-        ud.parts.boss = { glow };
-        break;
-      }
+  // Modell einer Stufen-Drohne. Wird neu gebaut, wenn sich Stufe oder Eigenschaften ändern.
+  function buildDroneModel(e, ud) {
+    const lv = DRONE_LEVELS[e.level];
+    const r = (lv.radius / TILE) * 1.55;
+    const model = new THREE.Group();
+    const base = new THREE.Color(lv.color).lerp(new THREE.Color("#ffffff"), 0.3);
+    const p = e.props;
+    const bodyMat = bodyMaterial(base, p.shield ? { metalness: 1, roughness: 0.03, color: "#ffffff" } : { metalness: 0.45, roughness: 0.22 });
+    if (p.camo) {
+      bodyMat.transparent = true;
+      bodyMat.opacity = 0.35;
     }
+    const body = mesh(G("sph24", () => new THREE.SphereGeometry(1, 24, 16)), bodyMat, { cast: !p.camo });
+    body.scale.setScalar(r);
+    body.position.y = r * 1.5;
+    body.userData.ownMaterial = true;
+    model.add(body);
+    const band = mesh(G("droneBand", () => new THREE.TorusGeometry(1.02, 0.12, 8, 32).rotateX(Math.PI / 2)), neon(lv.color, 2.4));
+    band.scale.setScalar(r);
+    band.position.y = r * 1.5;
+    const eye = mesh(G("sph12", () => new THREE.SphereGeometry(1, 12, 8)), ud.eyeMat);
+    eye.scale.set(r * 0.25, r * 0.22, r * 0.32);
+    eye.position.set(r * 0.88, r * 1.6, 0);
+    model.add(band, eye);
+    // Anzahl der kreisenden Satelliten = Stufe
+    const orbit = new THREE.Group();
+    orbit.position.y = r * 1.5;
+    for (let i = 0; i < e.level; i++) {
+      const sat = mesh(G("sph8", () => new THREE.SphereGeometry(1, 8, 6)), neon(lv.color, 3));
+      const a = (i / e.level) * Math.PI * 2;
+      sat.scale.setScalar(r * 0.16);
+      sat.position.set(Math.cos(a) * r * 1.55, 0, Math.sin(a) * r * 1.55);
+      orbit.add(sat);
+    }
+    model.add(orbit);
+    if (p.frost) {
+      const shell = mesh(G("ico0", () => new THREE.IcosahedronGeometry(1, 0)), cached("frostShell", () => new THREE.MeshPhysicalMaterial({
+        color: "#bfefff", transparent: true, opacity: 0.4, roughness: 0.05, metalness: 0.1, clearcoat: 1, flatShading: true, emissive: "#3fb6ff", emissiveIntensity: 0.4,
+      })));
+      shell.scale.setScalar(r * 1.35);
+      shell.position.y = r * 1.5;
+      const wire = mesh(G("ico0", () => new THREE.IcosahedronGeometry(1, 0)), basic("#e8fbff", { wireframe: true, transparent: true, opacity: 0.7 }));
+      wire.scale.setScalar(r * 1.36);
+      wire.position.y = r * 1.5;
+      model.add(shell, wire);
+    }
+    if (p.blast) {
+      const cap = mesh(G("hemi", () => new THREE.SphereGeometry(1, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2)), metal("#2a2a38", 0.45, 0.9), { cast: true });
+      cap.scale.set(r * 1.1, r * 0.8, r * 1.1);
+      cap.position.y = r * 1.62;
+      const rivets = mesh(G("rivetRing", () => new THREE.TorusGeometry(1.08, 0.1, 6, 12).rotateX(Math.PI / 2)), metal("#575770", 0.4, 1));
+      rivets.scale.setScalar(r);
+      rivets.position.y = r * 1.62;
+      model.add(cap, rivets);
+    }
+    if (p.shield) {
+      const prism = mesh(G("prismRing", () => new THREE.TorusGeometry(1.3, 0.06, 8, 40)), chrome("#ffffff", 0.02));
+      prism.scale.setScalar(r);
+      prism.position.y = r * 1.5;
+      model.add(prism);
+      ud.prism = prism;
+    } else ud.prism = null;
+    if (p.regen) {
+      const heal = mesh(G("healRing", () => new THREE.TorusGeometry(1.2, 0.08, 6, 32).rotateX(Math.PI / 2)), neon("#69f0ae", 2.6));
+      heal.scale.setScalar(r);
+      heal.position.y = 0.04;
+      model.add(heal);
+      ud.heal = heal;
+    } else ud.heal = null;
+    if (p.camo) {
+      const veil = mesh(G("sph16", () => new THREE.SphereGeometry(1, 16, 12)), basic("#9ff6ff", { wireframe: true, transparent: true, opacity: 0.25 }));
+      veil.scale.setScalar(r * 1.25);
+      veil.position.y = r * 1.5;
+      model.add(veil);
+    }
+    ud.bodyMat = bodyMat;
+    ud.baseColor = base;
+    ud.orbit = orbit;
+    ud.r = r;
+    return model;
+  }
+
+  function buildHeavyModel(e, ud) {
+    const h = HEAVY[e.kind];
+    const model = new THREE.Group();
+    const bodyMat = bodyMaterial(h.color);
+    ud.bodyMat = bodyMat;
+    ud.baseColor = new THREE.Color(h.color);
+    const addBreak = (m, at) => ud.breaks.push({ mesh: m, at, broken: false });
+    if (e.kind === "tank") {
+      const r = (h.radius / TILE) * 1.4;
+      ud.r = r;
+      const body = mesh(G("tankBody", () => new THREE.RoundedBoxGeometry(1.6, 0.9, 1.2, 3, 0.25)), bodyMat, { cast: true });
+      body.scale.setScalar(r);
+      body.position.y = r * 0.75;
+      body.userData.ownMaterial = true;
+      const core = mesh(G("sph12", () => new THREE.SphereGeometry(1, 12, 8)), ud.eyeMat);
+      core.scale.set(r * 0.18, r * 0.25, r * 0.4);
+      core.position.set(r * 0.82, r * 0.8, 0);
+      model.add(body, core);
+      for (let i = 0; i < 4; i++) {
+        const plate = mesh(G("plate", () => new THREE.RoundedBoxGeometry(1, 0.25, 1, 2, 0.1)), chrome("#c8cce8", 0.15));
+        plate.scale.set(r * 0.42, r * 0.5, r * 1.3);
+        plate.position.set((i - 1.5) * r * 0.42, r * 1.25, 0);
+        model.add(plate);
+        addBreak(plate, [0.8, 0.6, 0.4, 0.2][i]);
+      }
+      for (const s of [-1, 1]) {
+        const tread = mesh(G("tread", () => new THREE.CapsuleGeometry(0.2, 1.2, 4, 8).rotateZ(Math.PI / 2)), metal("#2a2d44", 0.4, 1));
+        tread.scale.setScalar(r);
+        tread.position.set(0, r * 0.25, s * r * 0.62);
+        model.add(tread);
+      }
+      const glow = glowSprite("#ff8a3d", r * 1.2);
+      glow.position.set(-r * 0.9, r * 0.8, 0);
+      model.add(glow);
+    } else if (e.kind === "bossA") {
+      const r = (h.radius / TILE) * 1.15;
+      ud.r = r;
+      const core = mesh(G("sph24", () => new THREE.SphereGeometry(1, 24, 16)), bodyMat, { cast: true });
+      core.scale.setScalar(r);
+      core.position.y = r * 1.4;
+      core.userData.ownMaterial = true;
+      model.add(core);
+      const eye = mesh(G("sph16", () => new THREE.SphereGeometry(1, 16, 12)), ud.eyeMat);
+      eye.scale.set(r * 0.25, r * 0.4, r * 0.4);
+      eye.position.set(r * 0.88, r * 1.45, 0);
+      model.add(eye);
+      ud.rings = [];
+      for (let i = 0; i < 2; i++) {
+        const ring = mesh(G("omegaRing", () => new THREE.TorusGeometry(1, 0.06, 10, 64)), chrome(i ? "#ffd6f5" : "#d6f7ff", 0.06), { cast: true });
+        ring.scale.setScalar(r * (1.45 + i * 0.25));
+        ring.position.y = r * 1.4;
+        ring.rotation.x = Math.PI / 2 + (i ? 0.45 : -0.3);
+        model.add(ring);
+        ud.rings.push(ring);
+      }
+      for (let i = 0; i < 8; i++) {
+        const node = mesh(G("sph12", () => new THREE.SphereGeometry(1, 12, 8)), neon(i % 2 ? "#ff4fd8" : "#29e6ff", 3));
+        const a = (i / 8) * Math.PI * 2;
+        node.scale.setScalar(0.12 / 1.45);
+        node.position.set(Math.cos(a), Math.sin(a), 0);
+        ud.rings[0].add(node);
+        addBreak(node, 0.95 - i * 0.11);
+      }
+      for (let i = 0; i < 6; i++) {
+        const spike = mesh(G("spike", () => new THREE.ConeGeometry(0.12, 0.6, 10)), chrome("#ffffff", 0.08));
+        spike.scale.setScalar(r);
+        const a = (i / 6) * Math.PI * 2;
+        spike.position.set(Math.cos(a) * r * 0.95, r * 1.4 + Math.sin(a) * r * 0.95, 0);
+        spike.rotation.z = a - Math.PI / 2;
+        model.add(spike);
+        addBreak(spike, 0.8 - i * 0.13);
+      }
+      const glow = glowSprite("#ff4fd8", r * 5);
+      glow.position.y = r * 1.4;
+      model.add(glow);
+      ud.glow = glow;
+    } else {
+      // Hyperion-Mutterschiff mit 4 Kapseln, in denen die Omega-Kolosse stecken
+      const r = (h.radius / TILE) * 0.9;
+      ud.r = r;
+      const hull = mesh(G("sph32", () => new THREE.SphereGeometry(1, 32, 16)), bodyMat, { cast: true });
+      hull.scale.set(r * 1.5, r * 0.45, r * 1.5);
+      hull.position.y = r * 1.2;
+      hull.userData.ownMaterial = true;
+      const dome = mesh(G("hemi", () => new THREE.SphereGeometry(1, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2)), chrome("#ffe6fb", 0.04));
+      dome.scale.setScalar(r * 0.7);
+      dome.position.y = r * 1.4;
+      const eye = mesh(G("sph16", () => new THREE.SphereGeometry(1, 16, 12)), ud.eyeMat);
+      eye.scale.setScalar(r * 0.22);
+      eye.position.y = r * 2.0;
+      model.add(hull, dome, eye);
+      const ring = mesh(G("motherRing", () => new THREE.TorusGeometry(1, 0.05, 10, 80).rotateX(Math.PI / 2)), neon("#ffd740", 2.6));
+      ring.scale.setScalar(r * 1.7);
+      ring.position.y = r * 1.2;
+      model.add(ring);
+      ud.rings = [ring];
+      ud.lights = new THREE.Group();
+      ud.lights.position.y = r * 1.1;
+      for (let i = 0; i < 16; i++) {
+        const l = mesh(G("sph8", () => new THREE.SphereGeometry(1, 8, 6)), neon(i % 2 ? "#ff3cac" : "#29e6ff", 3));
+        const a = (i / 16) * Math.PI * 2;
+        l.scale.setScalar(r * 0.06);
+        l.position.set(Math.cos(a) * r * 1.45, 0, Math.sin(a) * r * 1.45);
+        ud.lights.add(l);
+        addBreak(l, 0.98 - i * 0.06);
+      }
+      model.add(ud.lights);
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+        const pod = mesh(G("sph16", () => new THREE.SphereGeometry(1, 16, 12)), cached("podGlass", () => new THREE.MeshPhysicalMaterial({
+          color: "#ff8ae6", transparent: true, opacity: 0.45, roughness: 0.05, clearcoat: 1, emissive: "#ff3cac", emissiveIntensity: 0.6,
+        })));
+        pod.scale.setScalar(r * 0.42);
+        pod.position.set(Math.cos(a) * r * 1.05, r * 1.35, Math.sin(a) * r * 1.05);
+        const inner = mesh(G("sph16", () => new THREE.SphereGeometry(1, 16, 12)), chrome("#e0e6ff", 0.05));
+        inner.scale.setScalar(r * 0.26);
+        inner.position.copy(pod.position);
+        model.add(inner, pod);
+      }
+      const glow = glowSprite("#ffd740", r * 6);
+      glow.position.y = r * 1.2;
+      model.add(glow);
+      ud.glow = glow;
+    }
+    return model;
+  }
+
+  function makeEnemy(e) {
+    const root = new THREE.Group();
+    const ud = {
+      breaks: [], phase: Math.random() * 10, key: null, model: null,
+      eyeMat: new THREE.MeshStandardMaterial({ color: "#000000", emissive: "#ffffff", emissiveIntensity: 2.6 }),
+      ice: mesh(G("iceBlock", () => new THREE.RoundedBoxGeometry(1, 1, 1, 2, 0.15)), cached("iceMat", () => new THREE.MeshPhysicalMaterial({
+        color: "#c8f2ff", transparent: true, opacity: 0.55, roughness: 0.05, clearcoat: 1, emissive: "#5fd0ff", emissiveIntensity: 0.3,
+      }))),
+      stunStar: glowSprite("#ffd740", 0.25),
+    };
+    root.add(ud.ice, ud.stunStar);
     root.userData = ud;
     return root;
   }
 
   function updateEnemy(e, root) {
     const ud = root.userData;
-    const r = ud.r;
-    const t = e.wobble;
     const time = state.time;
+    // Modell (neu) aufbauen, wenn sich Stufe oder Eigenschaften geändert haben
+    const key = `${e.kind}|${e.level}|${Object.keys(e.props).filter((k) => e.props[k]).sort().join(",")}`;
+    if (ud.key !== key) {
+      if (ud.model) {
+        root.remove(ud.model);
+        disposeObject(ud.model);
+      }
+      ud.breaks = [];
+      ud.model = e.kind === "drone" ? buildDroneModel(e, ud) : buildHeavyModel(e, ud);
+      root.add(ud.model);
+      ud.key = key;
+    }
+    const r = ud.r;
     root.position.set(wx(e.x), ROAD_Y, wz(e.y));
     ud.model.rotation.y = -e.dir;
-    const k = Math.max(0, e.hp / e.maxHp);
-    const p = ud.parts;
+    const t = e.wobble;
+    let bob = Math.sin(t * 1.3) * r * 0.08;
 
-    // Bewegung
-    let bob = 0;
-    if (p.hover !== undefined) bob = p.hover + Math.sin(t * 1.4) * r * 0.08;
-    if (p.blob) {
-      const s = Math.sin(t) * 0.1;
-      p.blob.scale.set(r * (1 + s * 0.5), r * (0.85 - s), r * (1 + s * 0.5));
-      p.blob.position.y = r * (0.85 - s);
-    }
-    if (p.thruster) p.thruster.scale.setScalar(r * (2 + Math.random() * 0.6));
-    if (p.spark) {
-      p.spark.core.position.y = p.spark.glow.position.y = r * 2.2 + Math.sin(t * 1.3) * 0.06;
-      p.spark.glow.material.opacity = 0.7 + Math.random() * 0.3;
-    }
-    if (p.legs && !p.mech) for (const l of p.legs) l.rotation.y = Math.sin(t * 2 + l.userData.i + l.userData.side) * 0.5;
-    if (p.float) bob = 0.05 + Math.sin(t * 0.7) * 0.06;
-    if (p.ring) p.ring.rotation.y = t * 0.8;
-    if (p.rotor) {
-      p.rotor.rotation.y = time * 8;
-      const pulse = 1 - e.healTimer / e.def.heal.interval;
-      p.aura.scale.setScalar(r * (1.1 + pulse * 0.9));
-      p.aura.material.opacity = 0.15 + pulse * 0.7;
-      for (const c of p.cross) c.rotation.y = t * 0.5;
-    }
-    if (p.mech) {
-      for (const a of p.arms) a.rotation.z = Math.sin(t * 0.8 + a.userData.side * 1.6) * 0.5;
-      for (const l of p.legs) l.rotation.z = Math.sin(t * 0.8 + l.userData.side * 1.6) * 0.35;
-      bob = Math.abs(Math.sin(t * 0.8)) * r * 0.06;
-    }
-    if (p.rings) {
-      p.rings[0].rotation.z = time * 0.6;
-      p.rings[1].rotation.z = -time * 0.45;
+    if (e.kind === "drone") {
+      ud.orbit.rotation.y = time * (1.5 + e.level * 0.4);
+      if (ud.prism) ud.prism.rotation.y = time * 2;
+      if (ud.heal) ud.heal.scale.setScalar(r * (1 + Math.sin(time * 4) * 0.15));
+      if (e.props.camo) ud.bodyMat.opacity = 0.25 + Math.sin(time * 6 + ud.phase) * 0.1;
+    } else if (ud.rings) {
+      ud.rings[0].rotation.z = time * 0.6;
+      if (ud.rings[1]) ud.rings[1].rotation.z = -time * 0.45;
+      if (ud.lights) ud.lights.rotation.y = time * 0.5;
       bob = Math.sin(time * 0.8) * 0.08 + 0.1;
-      p.boss.glow.material.opacity = 0.35 + k * 0.4;
     }
     ud.model.position.set(0, bob, 0);
 
-    // Schaden sichtbar machen
-    ud.bodyMat.color.copy(ud.baseColor).lerp(CHARRED, (1 - k) * 0.6);
-    ud.eyeMat.emissive.copy(EYE_OK).lerp(EYE_HURT, Math.min(1, (1 - k) * 1.4));
-    ud.eyeMat.emissiveIntensity = k < 0.25 ? 1.5 + Math.random() * 2 : 2.6;
+    // Zustände: Treffer, Frost, Betäubung, Brand
+    const now = time;
+    const frozen = e.frozenUntil > now;
+    ud.ice.visible = frozen;
+    if (frozen) {
+      ud.ice.scale.set(r * 2.4, r * 2.6, r * 2.4);
+      ud.ice.position.y = r * 1.4;
+    }
+    ud.stunStar.visible = e.stunUntil > now;
+    if (ud.stunStar.visible) ud.stunStar.position.set(Math.cos(time * 8) * r, r * 3, Math.sin(time * 8) * r);
+    const heavy = e.kind !== "drone";
+    const k = heavy ? Math.max(0, e.hp / e.maxHp) : 1;
+    if (heavy) ud.bodyMat.color.copy(ud.baseColor).lerp(CHARRED, (1 - k) * 0.6);
+    ud.eyeMat.emissive.copy(heavy ? EYE_OK : tmpColor.set(DRONE_LEVELS[e.level].color)).lerp(EYE_HURT, heavy ? Math.min(1, (1 - k) * 1.4) : 0);
     const em = ud.bodyMat.emissive;
     if (e.flash > 0) {
       em.set("#ffffff");
-      ud.bodyMat.emissiveIntensity = 1.2;
-    } else if (e.slowFactor < 1) {
+      ud.bodyMat.emissiveIntensity = 0.9;
+    } else if (e.burn) {
+      em.set("#ff5a1a");
+      ud.bodyMat.emissiveIntensity = 0.5 + Math.random() * 0.4;
+      if (Math.random() < 0.3) addSpark(root.position.x, r * 2 + ROAD_Y, root.position.z, Math.random() < 0.5 ? "#ff8a3d" : "#ffd740", 1);
+    } else if (e.slowFactor < 1 || frozen) {
       em.set("#29e6ff");
-      ud.bodyMat.emissiveIntensity = 0.7;
-    } else if (k < 0.5) {
+      ud.bodyMat.emissiveIntensity = 0.55;
+    } else if (heavy && k < 0.5) {
       em.set("#ff3d00");
       ud.bodyMat.emissiveIntensity = (0.5 - k) * 2.4 * (0.6 + 0.4 * Math.sin(time * 25 + ud.phase));
     } else {
       em.set("#000000");
     }
-    if (ud.holoMat) {
-      ud.holoMat.opacity = (0.35 + k * 0.3) * (Math.random() < (1 - k) * 0.25 ? 0.2 : 1);
-    }
-    for (const b of ud.breaks) {
-      if (!b.broken && k < b.at) {
-        b.broken = true;
-        b.mesh.visible = false;
-        b.mesh.getWorldPosition(tmpPos);
-        for (let i = 0; i < 10; i++) addSpark(tmpPos.x, tmpPos.y, tmpPos.z, i % 2 ? "#ffd740" : "#ffffff", 2.5);
-        addDebris(tmpPos.x, tmpPos.y, tmpPos.z, ud.baseColor);
+    if (ud.glow) ud.glow.material.opacity = 0.3 + k * 0.4;
+    if (heavy) {
+      for (const b of ud.breaks) {
+        if (!b.broken && k < b.at) {
+          b.broken = true;
+          b.mesh.visible = false;
+          b.mesh.getWorldPosition(tmpPos);
+          for (let i = 0; i < 10; i++) addSpark(tmpPos.x, tmpPos.y, tmpPos.z, i % 2 ? "#ffd740" : "#ffffff", 2.5);
+          addDebris(tmpPos.x, tmpPos.y, tmpPos.z, ud.baseColor);
+        }
       }
+      if (k < 0.5 && Math.random() < (0.5 - k) * 0.6) addSpark(root.position.x, ROAD_Y + r * 1.4, root.position.z, Math.random() < 0.5 ? "#ffb300" : "#fff3c4", 1.6);
+      if (k < 0.3 && Math.random() < 0.2) addSmoke(root.position.x, ROAD_Y + r * 2, root.position.z);
+      if (k < 0.3) ud.model.position.x += (Math.random() - 0.5) * 0.03;
     }
-    if (k < 0.5 && Math.random() < (0.5 - k) * 0.6) {
-      root.getWorldPosition(tmpPos);
-      addSpark(tmpPos.x, tmpPos.y + r * 1.2, tmpPos.z, Math.random() < 0.5 ? "#ffb300" : "#fff3c4", 1.6);
-    }
-    if (k < 0.3 && Math.random() < 0.2) {
-      root.getWorldPosition(tmpPos);
-      addSmoke(tmpPos.x, tmpPos.y + r * 1.8, tmpPos.z);
-    }
-    if (k < 0.3) ud.model.position.x += (Math.random() - 0.5) * 0.03;
   }
 
-  // ---------- Raumschiffe ----------
+  // ---------- Raumschiff-Modell (für Station und fliegende Schiffe) ----------
+  function makeShipModel(accent = "#ff4fd8") {
+    const g = new THREE.Group();
+    const hull = mesh(G("shipHull", () => new THREE.CapsuleGeometry(0.075, 0.3, 6, 14).rotateZ(Math.PI / 2)), chrome("#f2f4ff", 0.08), { cast: true });
+    const cockpit = mesh(G("shipCockpit", () => new THREE.SphereGeometry(0.06, 12, 8)), neon("#29e6ff", 2.2));
+    cockpit.position.set(0.12, 0.05, 0);
+    cockpit.scale.set(1.4, 0.7, 0.9);
+    const wings = mesh(G("shipWings", () => new THREE.RoundedBoxGeometry(0.18, 0.02, 0.5, 2, 0.01)), chrome("#d8dcff", 0.12));
+    wings.position.x = -0.04;
+    g.add(hull, cockpit, wings);
+    for (const s of [-1, 1]) {
+      const tip = mesh(G("shipTip", () => new THREE.SphereGeometry(0.025, 8, 6)), neon(accent, 3));
+      tip.position.set(-0.04, 0, s * 0.25);
+      g.add(tip);
+    }
+    const engine = glowSprite("#ff9a3d", 0.3);
+    engine.position.x = -0.24;
+    g.add(engine);
+    g.userData.engine = engine;
+    return g;
+  }
+
   function makeShip(s) {
     const g = new THREE.Group();
     const model = makeShipModel();
+    if (s.s.bigShips) model.scale.setScalar(1.7);
     g.add(model);
     g.userData = { model, lastDir: s.dir };
     return g;
@@ -1982,6 +2009,7 @@ const View = (() => {
 
   function updateShip(s, g) {
     const ud = g.userData;
+    g.visible = s.wait <= 0;
     let turn = s.dir - ud.lastDir;
     if (turn > Math.PI) turn -= Math.PI * 2;
     if (turn < -Math.PI) turn += Math.PI * 2;
@@ -1995,14 +2023,20 @@ const View = (() => {
     if (s.flash > 0 && Math.random() < 0.3) addSpark(g.position.x, g.position.y, g.position.z, "#ffffff", 2);
   }
 
-  // ---------- Geschosse ----------
+  // ---------- Geschosse und Strahlen ----------
   function makeProjectile(p) {
     const g = new THREE.Group();
-    if (p.kind === "laser") {
-      g.add(mesh(G("laserBolt", () => new THREE.CapsuleGeometry(0.022, 0.32, 3, 6).rotateZ(Math.PI / 2)), neon("#7ff8ff", 4)));
+    if (p.kind === "bolt") {
+      const bolt = mesh(G("laserBolt", () => new THREE.CapsuleGeometry(0.022, 0.32, 3, 6).rotateZ(Math.PI / 2)), neon(p.rail ? "#ffffff" : "#7ff8ff", p.rail ? 5 : 4));
+      if (p.rail) bolt.scale.set(2.2, 1.4, 1.4);
+      g.add(bolt);
     } else if (p.kind === "plasma") {
       g.add(mesh(G("plasmaBall", () => new THREE.SphereGeometry(0.09, 14, 10)), neon("#ff8a3d", 3.5)));
       g.add(glowSprite("#ff8a3d", 0.6));
+    } else if (p.kind === "shell") {
+      g.add(mesh(G("shell", () => new THREE.CapsuleGeometry(0.07, 0.12, 4, 10).rotateZ(Math.PI / 2)), metal("#2a2d44", 0.3, 1)));
+      const band = mesh(G("shellBand", () => new THREE.TorusGeometry(0.075, 0.015, 6, 16).rotateY(Math.PI / 2)), neon("#ffd740", 3));
+      g.add(band, glowSprite("#ffd740", 0.4));
     } else {
       const shard = mesh(G("cryoShard", () => new THREE.OctahedronGeometry(0.07, 0)), neon("#d6b8ff", 3.2));
       shard.scale.x = 1.8;
@@ -2012,16 +2046,81 @@ const View = (() => {
   }
 
   function updateProjectile(p, g) {
+    if (p.kind === "shell") {
+      const k = Math.min(1, p.time / p.dur);
+      const h = PAD_TOP + 0.6 + (ROAD_Y + 0.1 - PAD_TOP - 0.6) * k + Math.sin(k * Math.PI) * 3.2;
+      g.position.set(wx(p.x), h, wz(p.y));
+      g.rotation.y = -p.angle;
+      g.rotation.z = (0.5 - k) * 2.4;
+      if (Math.random() < 0.5) addSpark(g.position.x, g.position.y, g.position.z, "#ffd740", 0.3);
+      return;
+    }
     const travelled = Math.hypot(p.x - p.sx, p.y - p.sy);
     const remaining = Math.hypot(p.tx - p.x, p.ty - p.y);
     const f = travelled / Math.max(1, travelled + remaining);
     const startH = PAD_TOP + 0.55;
-    const endH = ROAD_Y + (p.target.def.radius / TILE) * 1.5 + 0.1;
+    const endH = ROAD_Y + 0.3;
     let h = startH + (endH - startH) * f;
     if (p.kind === "plasma") h += Math.sin(f * Math.PI) * 0.7;
     g.position.set(wx(p.x), h, wz(p.y));
     g.rotation.y = -p.angle;
-    if (p.kind === "cryo") g.rotation.x = state.time * 10;
+    if (p.kind === "shard") g.rotation.x = state.time * 10;
+  }
+
+  // Strahlen (Dauerlaser, Schiffslaser, Splitter, Orbitalschlag)
+  function makeBeam(b) {
+    const m = new THREE.Mesh(G("beamCyl", () => new THREE.CylinderGeometry(1, 1, 1, 8, 1, true).translate(0, 0.5, 0)), new THREE.MeshBasicMaterial({
+      color: tmpColor.set(b.color).multiplyScalar(2.2), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    }));
+    m.userData.ownMaterial = true;
+    return m;
+  }
+
+  const beamFrom = new THREE.Vector3();
+  const beamTo = new THREE.Vector3();
+  const beamDir = new THREE.Vector3();
+  const UP = new THREE.Vector3(0, 1, 0);
+  function updateBeam(b, m) {
+    const k = b.life / b.max;
+    if (b.from === "sky") {
+      beamFrom.set(wx(b.x1), 14, wz(b.y1));
+      beamTo.set(wx(b.x2), ROAD_Y, wz(b.y2));
+    } else {
+      beamFrom.set(wx(b.x1), b.from === "ground" ? ROAD_Y + 0.15 : PAD_TOP + (b.from === "ship" ? 0.42 : 0.55), wz(b.y1));
+      beamTo.set(wx(b.x2), ROAD_Y + 0.3, wz(b.y2));
+    }
+    beamDir.subVectors(beamTo, beamFrom);
+    const len = beamDir.length();
+    m.position.copy(beamFrom);
+    m.quaternion.setFromUnitVectors(UP, beamDir.normalize());
+    const w = b.width * (b.from === "sky" ? k : 0.7 + Math.random() * 0.3);
+    m.scale.set(w, len, w);
+    m.material.opacity = Math.min(1, k * 2);
+  }
+
+  // Ereignisse aus der Spiellogik als Effekte anzeigen
+  function handleEvents(events) {
+    for (const ev of events) {
+      if (ev.type === "pop") {
+        const x = wx(ev.x);
+        const z = wz(ev.y);
+        const n = ev.dead ? 7 : 4;
+        for (let i = 0; i < n; i++) addSpark(x, ROAD_Y + 0.35, z, ev.color, ev.dead ? 2.2 : 1.4);
+        if (ev.dead && Math.random() < 0.5) burstStars(x, ROAD_Y + 0.4, z, 1, ev.color);
+      } else if (ev.type === "heavyDeath") {
+        const x = wx(ev.x);
+        const z = wz(ev.y);
+        const big = ev.kind !== "tank";
+        for (let i = 0; i < (big ? 60 : 24); i++) addSpark(x, ROAD_Y + 0.6, z, i % 3 ? ev.color : "#ffd740", big ? 4 : 2.6);
+        burstStars(x, ROAD_Y + 0.8, z, big ? 20 : 8, "#ffffff");
+      } else if (ev.type === "deflect") {
+        for (let i = 0; i < 3; i++) addSpark(wx(ev.x), ROAD_Y + 0.4, wz(ev.y), "#ffffff", 1.6);
+      } else if (ev.type === "regen") {
+        burstStars(wx(ev.x), ROAD_Y + 0.5, wz(ev.y), 2, "#69f0ae");
+      } else if (ev.type === "shatter") {
+        for (let i = 0; i < 8; i++) addSpark(wx(ev.x), ROAD_Y + 0.4, wz(ev.y), "#c8f2ff", 2.4);
+      }
+    }
   }
 
   // ---------- Ringe, Texte, Funkeln, Effektpartikel ----------
@@ -2169,10 +2268,12 @@ const View = (() => {
     sp.needsUpdate = true;
     sparkles.material.opacity = 0.6 + Math.sin(realTime * 2) * 0.2;
 
+    handleEvents(state.events);
     sync(state.towers, towerObjs, makeTower, updateTower);
     sync(state.enemies, enemyObjs, makeEnemy, updateEnemy);
     sync(state.ships, shipObjs, makeShip, updateShip);
     sync(state.projectiles, projectileObjs, makeProjectile, updateProjectile);
+    sync(state.beams, beamObjs, makeBeam, updateBeam);
     sync(state.rings, ringObjs, makeRing, updateRing);
     sync(state.texts, textObjs, makeText, updateText);
 
@@ -2291,7 +2392,7 @@ const View = (() => {
         hoverMesh.visible = true;
         hoverMesh.material.color.set(ok ? "#ffffff" : OBSTACLES[cell] ? "#ffd740" : "#ff2a4a").multiplyScalar(1.5);
         hoverMesh.position.set(tileX(hov.col), PAD_TOP + 0.015, tileZ(hov.row));
-        if (ok) showRange(tileX(hov.col), tileZ(hov.row), TOWER_TYPES[state.selectedType].range);
+        if (ok) showRange(tileX(hov.col), tileZ(hov.row), TOWER_TYPES[state.selectedType].base.range);
       }
     }
 
@@ -2306,6 +2407,14 @@ const View = (() => {
       selectMesh.position.set(tileX(sel.col), PAD_TOP + 0.02, tileZ(sel.row));
     }
     selectMesh.material.color.set("#ffd740").multiplyScalar(pulse);
+
+    // Upgrade-Vorschau: neue Reichweite in Pink
+    const pv = state.preview;
+    previewRing.visible = !!(pv && pv.range && state.towers.includes(pv.tower));
+    if (previewRing.visible) {
+      previewRing.position.set(tileX(pv.tower.col), ROAD_Y + 0.035, tileZ(pv.tower.row));
+      previewRing.scale.setScalar(pv.range / TILE);
+    }
   }
 
   return { init, buildMap, removeObstacle, render, resetCamera, setMenuMode };
