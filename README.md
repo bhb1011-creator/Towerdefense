@@ -1,14 +1,22 @@
-# Tower Defense
+# Tower Defense 3D
 
-Ein Tower-Defense-Spiel im Browser – reines HTML, CSS und JavaScript, ohne Abhängigkeiten.
+Ein 3D-Tower-Defense-Spiel im Browser – HTML, CSS und JavaScript mit [Three.js](https://threejs.org/) für die 3D-Grafik.
 
 ## Starten
 
-`index.html` im Browser öffnen. Fertig.
+`index.html` im Browser öffnen. Fertig. Three.js liegt im Ordner `lib/`, es wird also kein Internet und keine Installation gebraucht.
+
+## Kamera
+
+- **Linke Maustaste ziehen:** Kamera drehen
+- **Rechte Maustaste ziehen:** Kamera verschieben
+- **Mausrad:** zoomen
+- **Touch:** ein Finger dreht, zwei Finger zoomen und verschieben
+- **🎥 Kamera zurücksetzen:** zurück zur Übersicht
 
 ## Spielen
 
-- **Turm bauen:** Turm unten auswählen (oder Taste `1`–`3`) und auf ein freies Grasfeld klicken.
+- **Turm bauen:** Turm unten auswählen (oder Taste `1`–`3`) und auf ein freies Grasfeld klicken (kurz klicken, nicht ziehen).
 - **Welle starten:** Button „Welle starten“ oder `Leertaste`.
 - **Turm verbessern/verkaufen:** Auf einen gebauten Turm klicken.
 - **Tempo:** 1x / 2x / 3x umschalten.
@@ -33,7 +41,7 @@ Jeder Turm hat **zwei Ausbaupfade**, jeweils bis Stufe 3:
 - **Reichweite** (blau): +18 % Reichweite pro Stufe (Frost: längere Verlangsamung, Kanone: größere Explosion)
 - **Schaden** (rot): +45 % Schaden pro Stufe (Frost: stärkere Verlangsamung)
 
-Die Stufen siehst du als blaue und rote Punkte unten am Turm.
+Die Stufen siehst du als blaue und rote Steine am Turmsockel.
 
 ### Gegner
 
@@ -55,5 +63,7 @@ Im Spiel gibt es unter der Karte eine aufklappbare Gegner-Übersicht.
 ## Dateien
 
 - `index.html` – Seitenaufbau
-- `style.css` – Aussehen
+- `style.css` – Aussehen der Seite
 - `game.js` – Spiellogik. Oben in der Datei lassen sich Wege (`PATHS`), Seen (`LAKES`), Hindernisse (`OBSTACLES`), Türme (`TOWER_TYPES`), Ausbaupfade (`UPGRADE_PATHS`) und Gegner (`ENEMY_TYPES`) leicht anpassen.
+- `scene.js` – 3D-Darstellung: Gelände, Modelle für Türme, Gegner und Geschosse, Effekte und Kamera
+- `lib/` – Three.js 0.147 und OrbitControls (MIT-Lizenz, siehe `lib/three-LICENSE`)
