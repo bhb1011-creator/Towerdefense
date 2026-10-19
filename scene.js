@@ -286,7 +286,7 @@ const View = (() => {
 
     // Licht: warme Abendsonne von der Meerseite, kühles Neonlicht von der Stadt
     scene.add(new THREE.HemisphereLight("#9a6bff", "#2a0b30", 0.6));
-    const sun = new THREE.DirectionalLight("#ff9a6e", 0.8);
+    const sun = new THREE.DirectionalLight("#ff8a6a", 0.75);
     sun.position.set(-5, 10, -16);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
@@ -552,7 +552,7 @@ const View = (() => {
     waveTex.wrapS = waveTex.wrapT = THREE.RepeatWrapping;
     waveTex.repeat.set(30, 40);
     const seaMat = new THREE.MeshStandardMaterial({
-      color: "#3a1048", metalness: 0.95, roughness: 0.26, normalMap: waveTex, normalScale: new THREE.Vector2(0.35, 0.35),
+      color: "#3a1048", metalness: 0.9, roughness: 0.42, normalMap: waveTex, normalScale: new THREE.Vector2(0.35, 0.35),
     });
     const sea = new THREE.Mesh(new THREE.PlaneGeometry(700, 300).rotateX(-Math.PI / 2), seaMat);
     sea.position.set(0, GROUND_Y - 0.08, SHORE_Z - 150);
@@ -566,7 +566,7 @@ const View = (() => {
         map: canvasTexture(64, 256, (g, w, h) => {
           const grad = g.createLinearGradient(0, 0, w, 0);
           grad.addColorStop(0, "rgba(255,90,170,0)");
-          grad.addColorStop(0.5, "rgba(255,110,120,0.32)");
+          grad.addColorStop(0.5, "rgba(255,110,120,0.22)");
           grad.addColorStop(1, "rgba(255,90,170,0)");
           g.fillStyle = grad;
           g.fillRect(0, 0, w, h);

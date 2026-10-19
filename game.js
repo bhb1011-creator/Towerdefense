@@ -691,7 +691,9 @@ function orbitalStrike(t, s) {
 
 // ---------- Raumschiffe ----------
 function launchShips(t, s) {
-  for (let i = 0; i < s.ships; i++) {
+  // höchstens 20 Schiffe pro Station gleichzeitig unterwegs
+  const active = state.ships.filter((sh) => sh.tower === t).length;
+  for (let i = 0; i < Math.min(s.ships, 20 - active); i++) {
     const path = t.shipCount % shipPaths.length;
     t.shipCount++;
     const start = shipPaths[path][0];
@@ -1202,7 +1204,7 @@ function updateHud() {
   }
   const t = selectedTower();
   if (t) {
-    for (const btn of ui.info.querySelectorAll("button.up")) {
+    for (const btn of ui.info.querySelectorAll("button.up[data-p]")) {
       const p = Number(btn.dataset.p);
       btn.disabled = !!upgradeBlock(t, p) || state.gold < upgradeCost(t, p);
     }

@@ -1,72 +1,78 @@
 # Neo-City Defense
 
-Ein 3D-Tower-Defense-Spiel im Chromecore-Sci-Fi-Stil – HTML, CSS und JavaScript mit [Three.js](https://threejs.org/) für die 3D-Grafik.
+Ein 3D-Tower-Defense-Spiel im Retro-Synthwave- und Chromecore-Stil – HTML, CSS und JavaScript mit [Three.js](https://threejs.org/) für die 3D-Grafik. Musik und Soundeffekte werden live im Browser erzeugt.
 
 ## Starten
 
 `index.html` im Browser öffnen. Fertig. Three.js liegt im Ordner `lib/`, es wird also kein Internet und keine Installation gebraucht.
 
-## Kamera
+Im **Hauptmenü** gibt es:
+- **Neues Spiel** mit den Schwierigkeiten **Leicht**, **Normal** und **Schwer**
+- **Weiterspielen** (der Spielstand wird nach jeder Welle automatisch gespeichert)
+- **Einstellungen:** Musik und Soundeffekte an/aus mit Lautstärke, automatischer Wellenstart, Spielstand speichern/laden/löschen
+- **Anleitung**
 
-- **Linke Maustaste ziehen:** Kamera drehen
-- **Rechte Maustaste ziehen:** Kamera verschieben
-- **Mausrad:** zoomen
-- **Touch:** ein Finger dreht, zwei Finger zoomen und verschieben
-- **🎥 Kamera:** zurück zur Übersicht
+## Steuerung
 
-## Spielen
+| Aktion | Bedienung |
+|---|---|
+| Turm wählen | Knopf unten oder Tasten `1`–`5` |
+| Bauen | Feld im Hologramm-Raster anklicken (Umschalttaste = mehrere Türme) |
+| Bauen abbrechen | `Esc` oder Rechtsklick |
+| Welle starten | Knopf oder `Leertaste` |
+| Pause | Knopf oder `P` – in der Pause kann man weiter bauen und verbessern |
+| Kamera | linke Maustaste ziehen = drehen, rechte = verschieben, Mausrad = zoomen |
 
-- **Turm bauen:** Turm unten auswählen (oder Taste `1`–`4`) und auf eine freie Bauplatte klicken (kurz klicken, nicht ziehen).
-- **Welle starten:** Button „Welle starten“ oder `Leertaste`.
-- **Turm verbessern/verkaufen:** Auf einen gebauten Turm klicken.
-- **Tempo:** 1x / 2x / 3x umschalten.
+## Ziel
 
-Die Gegner kommen aus zwei Portalen, laufen auf zwei Straßen, die sich in der Mitte vereinen, und wollen durch das Stadttor. Erreicht ein Gegner das Tor, verlierst du Leben (große Gegner kosten mehr). Bei 0 Leben ist das Spiel vorbei.
+50 Wellen überstehen:
+- **Welle 30:** Boss **Omega-Koloss** (mit Lebensanzeige)
+- **Welle 40–49:** Der Omega-Koloss kehrt immer wieder zurück, gegen Ende auch doppelt (ohne Lebensanzeige)
+- **Welle 50:** Endboss **Hyperion-Mutterschiff** (eigene Lebensanzeige). Wenn es aufbricht, kommen 4 Omega-Kolosse heraus, jeder mit eigener Lebensanzeige.
 
-**Ziel:** 30 Wellen überstehen. In Welle 30 kommt der Endboss, der **Omega-Koloss**. Wer ihn besiegt, hat gewonnen.
+## Gegner
 
-### Karte
+**Stufen-Drohnen (Stufe 1–5):** Jeder Schadenspunkt senkt die Stufe um 1, eine Drohne der Stufe 1 wird zerstört. Höhere Stufen sind schneller. Die Stufe erkennt man an der Farbe (Cyan, Grün, Gelb, Orange, Pink) und an der Zahl der kreisenden Satelliten. In jeder Welle kommen verschiedene Stufen gemischt.
 
-Eine schwebende Plattform mitten in einer Sci-Fi-Stadt mit Hochhäusern, LED-Leisten, Holo-Werbetafeln und fliegenden Autos.
+**Spezialeigenschaften** (kommen später und können kombiniert sein):
 
-- **Energiebecken:** Hier kann nie gebaut werden.
-- **Holo-Kioske (15 💰) und Frachtcontainer (30 💰):** blockieren das Feld, können aber angeklickt und entfernt werden.
+| Eigenschaft | ab Welle | Wirkung |
+|---|---|---|
+| 👁 Tarnung | 12 | Nur Türme mit Tarnerkennung können sie anvisieren. Explosionen treffen sie trotzdem. |
+| ❄ Frostschild | 15 | Immun gegen Kälte (Kryoturm) |
+| 💥 Explosionspanzer | 18 | Immun gegen Explosionen (Brand wirkt trotzdem) |
+| 🪞 Spiegelpanzer | 21 | Reflektiert normale Laser |
+| ✚ Regeneration | 24 | Gewinnt verlorene Stufen zurück |
 
-### Türme
+**Panzerkern** (ab Welle 22): hält viel aus und zerfällt in zwei Stufe-5-Drohnen.
 
-| Turm         | Kosten | Besonderheit                                         | Ausbaupfade |
-|--------------|--------|------------------------------------------------------|-------------|
-| Laserturm    | 50     | Schnelle Einzelschüsse                               | Reichweite, Schaden |
-| Plasmawerfer | 90     | Langsam, Flächenschaden, gut gegen Panzerung         | Reichweite, Schaden |
-| Kryoturm     | 70     | Verlangsamt Gegner                                   | Reichweite, Schaden |
-| Raumstation  | 220    | Schickt Raumschiffe vom Stadttor die Straße entlang | Schiffsleben, Häufigkeit, Explosionskraft |
+Bosse und Panzerkerne zeigen Schaden, indem sie sich verfärben, rot glühen, Funken sprühen, rauchen und Teile verlieren.
 
-Jeder Ausbaupfad geht bis Stufe 3. Die Stufen siehst du als leuchtende Kugeln am Turmsockel.
+## Türme
 
-**Raumstation:** wird ab **Welle 8** freigeschaltet, ihre Verbesserungen ab **Welle 12**. Die Raumschiffe starten am Stadttor und fliegen den Gegnern entgegen. Treffen sie auf Gegner, halten sie diese auf und rammen sie. Wird ein Schiff zerstört (oder erreicht es das Ende der Straße), explodiert es und beschädigt alle Gegner in der Nähe.
+Jeder Turm hat **3 Ausbauwege mit je 5 Stufen**. Höchstens **5-2-0** ist erlaubt: ein Weg bis Stufe 5, ein zweiter bis Stufe 2, der dritte bleibt leer. Beim Überfahren eines Upgrades mit der Maus zeigt eine Vorschau die Wirkung und die neue Reichweite (pinker Ring).
 
-### Gegner
+| Turm | Kosten | Ausbauwege | Tarnung |
+|---|---|---|---|
+| Laserturm | 200 | Überladung · Fokus · Sensorik | über „Radar“ (Sensorik 2) |
+| Plasmawerfer | 350 | Sprengkraft · Schnellfeuer · Schockwelle | nein (Explosionen treffen Getarnte mit) |
+| Kryoturm | 300 | Tiefkühlung · Kältefeld · Kristalle | Puls trifft Getarnte, Splitter ab „Thermoschock“ |
+| Mörser | 550 | Präzision · Kadenz · Smart-Munition | trifft Getarnte immer |
+| Raumstation | 800 (ab Welle 8, Upgrades ab Welle 12) | Rumpf · Hangar · Sprengkern | Schiffe rammen Getarnte |
 
-Gegner haben **keine Lebensanzeige**. Stattdessen sieht man den Schaden: Sie verfärben sich, glühen rot, sprühen Funken, rauchen und verlieren Panzerteile. Ihre Augen wechseln von Cyan zu Rot.
+- **Mörser:** schießt über die ganze Karte auf einen frei wählbaren Zielpunkt („🎯 Zielpunkt setzen“). Mit „Zielverfolgung“ kann er Gegner auch automatisch verfolgen.
+- **Raumstation:** schickt Raumschiffe vom Stadttor den Gegnern entgegen. Sie halten Gegner auf, rammen sie und explodieren, wenn sie zerstört werden.
+- **Ziel-Priorität** pro Turm: Erster, Letzter, Stärkster oder Nächster.
+- **Statistik:** Beim Anklicken eines Turms sieht man Gesamt-Schaden und zerstörte Gegner.
 
-Manche Gegner tragen kleinere Gegner in sich, die beim Zerstören freigesetzt werden:
-
-| Gegner          | Fähigkeit                                  | Enthält                    |
-|-----------------|--------------------------------------------|----------------------------|
-| Flüssigmetall   | –                                          | 2× Nanobot                 |
-| Späher-Gleiter  | sehr schnell                               | –                          |
-| Panzer-Crawler  | gepanzert (−3 Schaden pro Treffer)         | 3× Späher-Gleiter          |
-| Tarndrohne      | immun gegen Kälte                          | 3× Plasmafunke             |
-| Reparaturdrohne | repariert Gegner in der Nähe               | 2× Nanobot                 |
-| Titan-Mech      | schwer gepanzert (jede 5. Welle)           | 2× Panzer-Crawler, 2× Flüssigmetall |
-| Omega-Koloss    | Endboss in Welle 30                        | 3× Titan-Mech, 4× Panzer-Crawler |
-| Nanobot         | klein und flink                            | –                          |
-| Plasmafunke     | blitzschnell, immun gegen Kälte            | –                          |
+Unverbesserte Türme reichen ab den mittleren Wellen nicht mehr aus. Upgrades lohnen sich.
 
 ## Dateien
 
 - `index.html` – Seitenaufbau
-- `style.css` – Chrom-Look der Oberfläche
-- `game.js` – Spiellogik. Oben in der Datei lassen sich Wege (`PATHS`), Energiebecken (`POOLS`), Hindernisse (`OBSTACLES`), Türme (`TOWER_TYPES`), Ausbaupfade (`UPGRADE_PATHS`) und Gegner (`ENEMY_TYPES`) leicht anpassen.
-- `scene.js` – 3D-Darstellung: Stadt, Spielfeld, Modelle für Türme, Gegner, Raumschiffe und Geschosse, Effekte, Leuchten (Bloom) und Kamera
-- `lib/` – Three.js 0.147 mit OrbitControls, RoundedBoxGeometry und den Bloom-Nachbearbeitungsdateien (MIT-Lizenz, siehe `lib/three-LICENSE`)
+- `style.css` – Chrom-Look der Oberfläche, Menü und Lebensanzeigen
+- `data.js` – Spieldaten: Karte, Schwierigkeiten, Gegner, Türme mit allen Upgrades, Wellen
+- `game.js` – Spielablauf, Schadenssystem, Speichern, Menü und Oberfläche
+- `scene.js` – 3D-Darstellung: Retro-Welt mit Sonnenuntergang, Meer und Stadt, Spielfeld, alle Modelle und Effekte
+- `audio.js` – Synthwave-Soundtrack und Soundeffekte (Web Audio API)
+- `lib/` – Three.js 0.147 mit OrbitControls, RoundedBoxGeometry und Bloom-Nachbearbeitung (MIT-Lizenz, siehe `lib/three-LICENSE`)

@@ -66,7 +66,7 @@ const DAMAGE_IMMUNITY = { laser: "shield", blast: "blast", cold: "frost" };
 const DAMAGE_NAMES = { laser: "Laser", blast: "Explosion", cold: "Kälte", fire: "Brand", pure: "Rein" };
 
 const HEAVY = {
-  tank: { name: "Panzerkern", speed: 32, radius: 16, hp: 26, hpPerWave: 2.2, reward: 25, lifeDamage: 30, color: "#b0b8d8" },
+  tank: { name: "Panzerkern", speed: 32, radius: 16, hp: 26, hpPerWave: 2.2, reward: 25, lifeDamage: 15, color: "#b0b8d8" },
   bossA: { name: "Omega-Koloss", speed: 11, radius: 34, hp: 1000, reward: 300, lifeDamage: 9999, color: "#e0e6ff" },
   bossB: { name: "Hyperion-Mutterschiff", speed: 8, radius: 48, hp: 9000, reward: 1000, lifeDamage: 9999, color: "#ffd6f5" },
 };
