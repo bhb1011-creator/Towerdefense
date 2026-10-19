@@ -81,3 +81,21 @@ button.selected {
   margin-right: 6px;
   vertical-align: middle;
 }
+
+#legendBox {
+  width: 100%;
+  background: #262b33;
+  border: 1px solid #3a4150;
+  border-radius: 6px;
+  padding: 6px 12px;
+}
+
+#legendBox summary {
+  cursor: pointer;
+  font-weight: bold;
+}
+
+#legend .enemy {
+  margin: 4px 0;
+  font-size: 0.9rem;
+}
