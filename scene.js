@@ -49,6 +49,14 @@ const View = (() => {
   const wz = (py) => py / TILE - ROWS / 2;
   const tileX = (c) => c + 0.5 - COLS / 2;
   const tileZ = (r) => r + 0.5 - ROWS / 2;
+  // Geländehöhe (sanfte Hügel): gw für Weltkoordinaten, gp für Spiel-Pixel
+  const gw = (x, z) => terrainHeight(x + COLS / 2, z + ROWS / 2);
+  const gp = (px, py) => terrainHeight(px / TILE, py / TILE);
+  // Höhe der Alien-Straße (unter dem Tunnelberg eben): bw für Welt, bp für Spiel-Pixel
+  const bw = (x, z) => baseHeight(x + COLS / 2, z + ROWS / 2);
+  const bp = (px, py) => baseHeight(px / TILE, py / TILE);
+  // Türme stehen auf dem höchsten Punkt ihres 2×2-Platzes (Fundament reicht nach unten)
+  const towerGround = (px, py) => Math.max(...[[-0.8, -0.8], [0.8, -0.8], [-0.8, 0.8], [0.8, 0.8], [0, 0]].map(([ox, oz]) => gw(wx(px) + ox, wz(py) + oz)));
 
   const geoCache = new Map();
   function G(key, make) {
@@ -460,8 +468,16 @@ const View = (() => {
     pointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
     pointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
     raycaster.setFromCamera(pointer, camera);
-    const hit = raycaster.ray.intersectPlane(groundPlane, tmpPos);
+    let hit = raycaster.ray.intersectPlane(groundPlane, tmpPos);
     if (!hit) return null;
+    // auf Hügeln nachkorrigieren: Ebene auf die Geländehöhe am Treffpunkt anheben
+    for (let i = 0; i < 2; i++) {
+      const h = gw(hit.x, hit.z);
+      if (h <= 0) break;
+      groundPlane.constant = -(PAD_TOP + h);
+      hit = raycaster.ray.intersectPlane(groundPlane, tmpPos) || hit;
+      groundPlane.constant = -PAD_TOP;
+    }
     const col = Math.floor(hit.x + COLS / 2);
     const row = Math.floor(hit.z + ROWS / 2);
     if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return null;
@@ -915,6 +931,19 @@ const View = (() => {
     return g;
   }
 
+  // Fein unterteilte Bodenfläche, die den Hügeln folgt (für Boden und Seen-Maske)
+  function terrainPlane() {
+    return G("terrainPlane", () => {
+      const w = COLS + FLOOR_MARGIN * 2;
+      const d = ROWS + FLOOR_MARGIN * 2;
+      const g = new THREE.PlaneGeometry(w, d, Math.round(w * 8), Math.round(d * 8)).rotateX(-Math.PI / 2);
+      const p = g.attributes.position;
+      for (let i = 0; i < p.count; i++) p.setY(i, gw(p.getX(i), p.getZ(i)));
+      g.computeVertexNormals();
+      return g;
+    });
+  }
+
   // ---------- Spielfeld ----------
   function buildMap() {
     if (mapGroup) {
@@ -942,11 +971,23 @@ const View = (() => {
 
     // Glatter Metallboden mit Details (eine Fläche statt einzelner Platten)
     const floorTex = floorTextures(rng);
-    const floor = mesh(new THREE.PlaneGeometry(COLS + FLOOR_MARGIN * 2, ROWS + FLOOR_MARGIN * 2).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({
+    const floor = mesh(terrainPlane(), new THREE.MeshStandardMaterial({
       map: floorTex.map, roughnessMap: floorTex.rough, roughness: 1, metalness: 0.55, color: "#ffd9ee",
       emissive: "#ffffff", emissiveMap: floorTex.glow, emissiveIntensity: 1,
     }), { receive: true });
     floor.position.y = FLOOR_Y;
+    // leuchtende Höhenlinien, damit man die Hügel auch von oben erkennt
+    floor.material.onBeforeCompile = (sh) => {
+      sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nvarying float vH;").replace("#include <begin_vertex>", "#include <begin_vertex>\nvH = position.y;");
+      sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nvarying float vH;").replace(
+        "#include <emissivemap_fragment>",
+        `#include <emissivemap_fragment>
+        float hv = vH * 6.0;
+        float line = 1.0 - min(abs(fract(hv - 0.5) - 0.5) / max(fwidth(hv) * 1.2, 1e-4), 1.0);
+        float shade = smoothstep(0.02, 0.15, vH);
+        totalEmissiveRadiance += mix(vec3(1.0, 0.25, 0.75), vec3(0.3, 0.9, 1.0), clamp(vH / 1.6, 0.0, 1.0)) * line * 0.55 * shade;`
+      );
+    };
     mapGroup.add(floor);
 
     // Hologramm-Raster: nur im Baumodus sichtbar
@@ -962,11 +1003,14 @@ const View = (() => {
 
     // Straße mit Neon-Kanten und Lichtstreifen, die zum Tor fließen
     pathPoints.forEach((pts, pi) => {
-      const p3 = pts.map((p) => ({ x: wx(p.x), z: wz(p.y) }));
+      const pl = polyline(pts.map((p) => ({ x: wx(p.x), z: wz(p.y) })));
+      const p3 = [];
+      for (let d = 0; d < pl.length; d += 0.12) p3.push(pointAt(pl, d));
+      p3.push(pl.pts[pl.pts.length - 1]);
       const yOff = pi * 0.002;
-      mapGroup.add(mesh(ribbon(p3, 0, 0.94, ROAD_Y + yOff), metal("#191a2c", 0.3, 0.7), { receive: true }));
+      mapGroup.add(mesh(ribbon(p3, 0, 0.94, (x, z) => ROAD_Y + yOff + bw(x, z)), metal("#191a2c", 0.3, 0.7), { receive: true }));
       for (const side of [-1, 1]) {
-        mapGroup.add(mesh(ribbon(p3, side * 0.45, 0.05, ROAD_Y + 0.004 + yOff), neon("#29e6ff", 2.2)));
+        mapGroup.add(mesh(ribbon(p3, side * 0.45, 0.05, (x, z) => ROAD_Y + 0.004 + yOff + bw(x, z)), neon("#29e6ff", 2.2)));
       }
     });
     const paths3 = pathPoints.map((pts) => polyline(pts.map((p) => ({ x: wx(p.x), z: wz(p.y) }))));
@@ -1086,7 +1130,7 @@ const View = (() => {
           gl_FragColor = vec4(c, 1.0);
         }`,
     });
-    const pools = new THREE.Mesh(new THREE.PlaneGeometry(COLS + FLOOR_MARGIN * 2, ROWS + FLOOR_MARGIN * 2).rotateX(-Math.PI / 2), poolMat);
+    const pools = new THREE.Mesh(terrainPlane(), poolMat);
     pools.userData.ownMaterial = true;
     pools.position.y = FLOOR_Y + 0.006;
     mapGroup.add(pools);
@@ -1120,7 +1164,13 @@ const View = (() => {
         const t = grid[r][c];
         if (OBSTACLES[t]) {
           const obj = Buildings.make(t, variant[r][c]);
-          obj.position.set(tileX(c), PAD_TOP, tileZ(r));
+          const hs = [[-0.45, -0.45], [0.45, -0.45], [-0.45, 0.45], [0.45, 0.45]].map(([ox, oz]) => gw(tileX(c) + ox, tileZ(r) + oz));
+          obj.position.set(tileX(c), PAD_TOP + Math.max(...hs), tileZ(r));
+          // Fundament für Gebäude am Hang
+          if (Math.max(...hs) - Math.min(...hs) > 0.02) {
+            const base = mesh(G("bldFoundation", () => new THREE.BoxGeometry(0.92, 1.4, 0.92).translate(0, -0.7, 0)), metal("#3a2d5c", 0.6, 0.4), { receive: true });
+            obj.add(base);
+          }
           // Vorderseite (+Z) zum nächsten Gehweg drehen, wenn einer in der Nähe ist
           let best = null;
           let bestD = 1.6;
@@ -1182,7 +1232,11 @@ const View = (() => {
       const p = pts[i];
       const o1 = offset - width / 2;
       const o2 = offset + width / 2;
-      pos.push(p.x + n.x * o1, y, p.z + n.z * o1, p.x + n.x * o2, y, p.z + n.z * o2);
+      const ax = p.x + n.x * o1;
+      const az = p.z + n.z * o1;
+      const bx = p.x + n.x * o2;
+      const bz = p.z + n.z * o2;
+      pos.push(ax, typeof y === "function" ? y(ax, az) : y, az, bx, typeof y === "function" ? y(bx, bz) : y, bz);
       if (i > 0) {
         const k = i * 2;
         idx.push(k - 2, k - 1, k, k - 1, k + 1, k);
@@ -1545,13 +1599,15 @@ const View = (() => {
           const dz = Math.sin(ang);
           for (let i = -2; i <= 2; i++) {
             const st = mesh(G("zebraStripe", () => new THREE.PlaneGeometry(0.09, 0.4).rotateX(-Math.PI / 2)), stripeMat);
-            st.position.set(m.x - COLS / 2 + dx * i * 0.17, ROAD_Y + 0.008, m.y - ROWS / 2 + dz * i * 0.17);
+            st.position.set(m.x - COLS / 2 + dx * i * 0.17, 0, m.y - ROWS / 2 + dz * i * 0.17);
+            st.position.y = ROAD_Y + 0.008 + bw(st.position.x, st.position.z);
             st.rotation.y = -ang;
             g.add(st);
           }
           for (const s of [-1, 1]) {
             const post = new THREE.Group();
-            post.position.set(m.x - COLS / 2 + dx * s * 0.62 - dz * 0.24, PAD_TOP, m.y - ROWS / 2 + dz * s * 0.62 + dx * 0.24);
+            post.position.set(m.x - COLS / 2 + dx * s * 0.62 - dz * 0.24, 0, m.y - ROWS / 2 + dz * s * 0.62 + dx * 0.24);
+            post.position.y = PAD_TOP + gw(post.position.x, post.position.z);
             const pole = mesh(G("crossPole", () => new THREE.CylinderGeometry(0.012, 0.016, 0.42, 6)), metal("#e8ecff", 0.25, 1));
             pole.position.y = 0.21;
             const light = mesh(G("crossLight", () => new THREE.RoundedBoxGeometry(0.06, 0.09, 0.06, 2, 0.015)), neon(s < 0 ? "#69f0ae" : "#ff2a4a", 2.6));
@@ -1571,41 +1627,13 @@ const View = (() => {
     return g;
   }
 
-  // Röhren-Tunnel aus Glas: Aliens werden eingesaugt und rauschen geschrumpft hindurch
+  // Tunnel durch den Berg: an beiden Enden ein Portal mit leuchtendem Saug-Wirbel
   let vortexTex = null;
   function makeTunnel() {
     const g = new THREE.Group();
     const x = tileX(TUNNEL.col);
-    const z0 = tileZ(TUNNEL.rowFrom) - 0.5;
-    const z1 = tileZ(TUNNEL.rowTo) + 0.5;
-    const len = z1 - z0;
-    const zc = (z0 + z1) / 2;
-    const tubeMat = cached("tunnelGlass", () => new THREE.MeshPhysicalMaterial({
-      color: "#9fe8ff", transparent: true, opacity: 0.28, roughness: 0.03, clearcoat: 1, depthWrite: false, side: THREE.DoubleSide,
-      emissive: "#3a8cff", emissiveIntensity: 0.25,
-    }));
-    const tube = mesh(new THREE.CylinderGeometry(0.46, 0.46, len, 32, 1, true, Math.PI / 2, Math.PI).rotateX(Math.PI / 2), tubeMat);
-    tube.position.set(x, PAD_TOP, zc);
-    tube.renderOrder = 3;
-    g.add(tube);
-    // Chromrippen und Neonstreifen auf dem Dach
-    for (let i = 0; i <= 10; i++) {
-      const rib = mesh(G("tunnelRib", () => new THREE.TorusGeometry(0.47, 0.025, 6, 24, Math.PI)), chrome("#f4f6ff", 0.1), { cast: true });
-      rib.position.set(x, PAD_TOP, z0 + (i / 10) * len);
-      g.add(rib);
-    }
-    for (const a of [-0.6, 0, 0.6]) {
-      const strip = mesh(new THREE.CylinderGeometry(0.012, 0.012, len, 6).rotateX(Math.PI / 2), neon(a ? "#29e6ff" : "#ff3cac", 2.6));
-      strip.position.set(x + Math.sin(a) * 0.475, PAD_TOP + Math.cos(a) * 0.475, zc);
-      g.add(strip);
-    }
-    // Sockel an beiden Seiten
-    for (const s of [-1, 1]) {
-      const base = mesh(new THREE.BoxGeometry(0.1, 0.1, len + 0.1), chrome("#5a6090", 0.25, 0.7), { receive: true });
-      base.position.set(x + s * 0.47, PAD_TOP + 0.05, zc);
-      g.add(base);
-    }
-    // Saug-Wirbel an den Enden
+    const zTop = tileZ(TUNNEL.rowFrom) - 0.5;
+    const zBottom = tileZ(TUNNEL.rowTo) + 0.5;
     if (!vortexTex) {
       vortexTex = canvasTexture(128, 128, (c) => {
         const grad = c.createRadialGradient(64, 64, 2, 64, 64, 64);
@@ -1627,29 +1655,64 @@ const View = (() => {
           c.stroke();
         }
       });
+      vortexTex.center.set(0.5, 0.5);
     }
-    for (const [z, dir] of [[z1, 1], [z0, -1]]) {
-      const ring = mesh(G("tunnelMouth", () => new THREE.TorusGeometry(0.5, 0.07, 12, 40, Math.PI)), chrome("#e8ecff", 0.08), { cast: true });
-      ring.position.set(x, PAD_TOP, z);
-      const glow = mesh(G("tunnelMouthGlow", () => new THREE.TorusGeometry(0.5, 0.025, 8, 40, Math.PI)), neon("#29e6ff", 3));
-      glow.position.set(x, PAD_TOP, z + dir * 0.06);
-      const disc = new THREE.Mesh(G("vortexDisc", () => new THREE.CircleGeometry(0.46, 40, 0, Math.PI)), new THREE.MeshBasicMaterial({
-        map: vortexTex, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending,
+    // Portalwand mit Bogenöffnung (wird in den Hang gesetzt)
+    const wallGeo = G("portalWall", () => {
+      const sh = new THREE.Shape();
+      sh.moveTo(-0.95, 0);
+      sh.lineTo(0.95, 0);
+      sh.lineTo(0.95, 0.62);
+      sh.quadraticCurveTo(0.95, 0.95, 0.6, 0.98);
+      sh.lineTo(-0.6, 0.98);
+      sh.quadraticCurveTo(-0.95, 0.95, -0.95, 0.62);
+      sh.lineTo(-0.95, 0);
+      const hole = new THREE.Path();
+      hole.moveTo(-0.5, 0);
+      hole.lineTo(-0.5, 0.3);
+      hole.absarc(0, 0.3, 0.5, Math.PI, 0, true);
+      hole.lineTo(0.5, 0);
+      hole.lineTo(-0.5, 0);
+      sh.holes.push(hole);
+      return new THREE.ExtrudeGeometry(sh, { depth: 0.22, bevelEnabled: true, bevelSize: 0.03, bevelThickness: 0.03, bevelSegments: 2, curveSegments: 24 });
+    });
+    for (const [z, dir] of [[zBottom, 1], [zTop, -1]]) {
+      const portal = new THREE.Group();
+      portal.position.set(x, PAD_TOP, z);
+      // Wand steht im Hang, Öffnung zeigt nach außen
+      portal.rotation.y = dir > 0 ? 0 : Math.PI;
+      const wall = mesh(wallGeo, chrome("#6a5c9a", 0.25, 0.6), { cast: true, receive: true });
+      wall.position.z = -0.2;
+      const arch = mesh(G("portalArch", () => new THREE.TorusGeometry(0.53, 0.05, 10, 40, Math.PI)), chrome("#f4f6ff", 0.08), { cast: true });
+      arch.position.set(0, 0.3, 0.02);
+      const archGlow = mesh(G("portalArchGlow", () => new THREE.TorusGeometry(0.6, 0.02, 8, 40, Math.PI)), neon("#29e6ff", 3));
+      archGlow.position.set(0, 0.3, 0.03);
+      for (const sx of [-1, 1]) {
+        const post = mesh(G("portalPost", () => new THREE.BoxGeometry(0.1, 0.3, 0.1)), chrome("#f4f6ff", 0.08), { cast: true });
+        post.position.set(sx * 0.53, 0.15, 0.02);
+        portal.add(post);
+      }
+      const dark = mesh(G("portalDark", () => {
+        const sh = new THREE.Shape();
+        sh.moveTo(-0.5, 0);
+        sh.lineTo(-0.5, 0.3);
+        sh.absarc(0, 0.3, 0.5, Math.PI, 0, true);
+        sh.lineTo(0.5, 0);
+        return new THREE.ShapeGeometry(sh, 24);
+      }), basic("#05010c"));
+      dark.position.z = -0.3;
+      const disc = new THREE.Mesh(G("portalVortex", () => new THREE.CircleGeometry(0.5, 40, 0, Math.PI).translate(0, 0.3, 0)), new THREE.MeshBasicMaterial({
+        map: vortexTex, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending,
       }));
       disc.userData.ownMaterial = true;
-      disc.position.set(x, PAD_TOP + 0.005, z);
-      g.add(ring, glow, disc);
-      vortexTex.center.set(0.5, 0.5);
-      animated.push({ fn: (t) => { vortexTex.rotation = t * 4; disc.material.opacity = 0.45 + Math.sin(t * 5) * 0.12; } });
+      disc.position.z = -0.1;
+      const sign = glowSprite("#29e6ff", 1.2);
+      sign.position.set(0, 0.4, 0.1);
+      portal.add(wall, arch, archGlow, dark, disc, sign);
+      g.add(portal);
+      animated.push({ fn: (t) => { disc.material.opacity = 0.45 + Math.sin(t * 5) * 0.15; sign.material.opacity = 0.35 + Math.sin(t * 5) * 0.15; } });
     }
-    // Lichtpulse, die durch die Röhre schießen
-    const pulses = [];
-    for (let i = 0; i < 4; i++) {
-      const p = mesh(G("tunnelPulse", () => new THREE.TorusGeometry(0.44, 0.012, 6, 24, Math.PI)), neon("#7af3ff", 3));
-      g.add(p);
-      pulses.push(p);
-    }
-    animated.push({ fn: (t) => pulses.forEach((p, i) => { p.position.set(x, PAD_TOP, z1 - ((t * 2.2 + i * len / 4) % len)); }) });
+    animated.push({ fn: (t) => { vortexTex.rotation = t * 4; } });
     return g;
   }
 
@@ -1746,7 +1809,7 @@ const View = (() => {
     mapGroup.remove(obj);
     disposeObject(obj);
     obstacleMeshes.delete(key);
-    burstStars(tileX(c), PAD_TOP + 0.4, tileZ(r), 8, "#ffffff");
+    burstStars(tileX(c), PAD_TOP + 0.4 + gw(tileX(c), tileZ(r)), tileZ(r), 8, "#ffffff");
   }
 
   // ---------- Türme ----------
@@ -1775,9 +1838,9 @@ const View = (() => {
       ud.idle.scale.setScalar(0.9);
       g.add(ud.idle);
     }
-    g.position.set(wx(t.x), 0, wz(t.y));
+    g.position.set(wx(t.x), towerGround(t.x, t.y), wz(t.y));
     g.userData = ud;
-    burstStars(wx(t.x), PAD_TOP + 0.5, wz(t.y), 10, TOWER_TYPES[t.type].color);
+    burstStars(wx(t.x), g.position.y + PAD_TOP + 0.5, wz(t.y), 10, TOWER_TYPES[t.type].color);
     return g;
   }
 
@@ -1790,7 +1853,7 @@ const View = (() => {
       if (ud.model) {
         g.remove(ud.model.root);
         disposeObject(ud.model.root);
-        burstStars(g.position.x, PAD_TOP + 0.8, g.position.z, 18, "#ffffff");
+        burstStars(g.position.x, g.position.y + PAD_TOP + 0.8, g.position.z, 18, "#ffffff");
       }
       ud.model = Towers.build(t.type, t.levels);
       ud.model.root.position.y = PAD_TOP;
@@ -1809,7 +1872,7 @@ const View = (() => {
     }
     if (ud.marker) {
       const aim = state.aiming === t && state.hoverPoint ? state.hoverPoint : t.aim;
-      ud.marker.position.set(wx(aim.x) - g.position.x, ROAD_Y + 0.03, wz(aim.y) - g.position.z);
+      ud.marker.position.set(wx(aim.x) - g.position.x, ROAD_Y + 0.03 + bp(aim.x, aim.y) - g.position.y, wz(aim.y) - g.position.z);
       ud.marker.rotation.y = time * 0.8;
       const active = state.aiming === t || (state.selected && state.selected.tower === t);
       ud.markMat.opacity = active ? 0.95 : 0.3;
@@ -1894,7 +1957,7 @@ const View = (() => {
       ud.key = key;
     }
     const r = ud.r;
-    root.position.set(wx(e.x), ROAD_Y, wz(e.y));
+    root.position.set(wx(e.x), ROAD_Y + bp(e.x, e.y), wz(e.y));
     // sanft in Laufrichtung drehen
     let turn = -e.dir - ud.model.rotation.y;
     turn = Math.atan2(Math.sin(turn), Math.cos(turn));
@@ -1936,7 +1999,7 @@ const View = (() => {
     } else if (e.burn) {
       em.set("#ff5a1a");
       ud.bodyMat.emissiveIntensity = 0.5 + Math.random() * 0.4;
-      if (Math.random() < 0.3) addSpark(root.position.x, r * 2 + ROAD_Y, root.position.z, Math.random() < 0.5 ? "#ff8a3d" : "#ffd740", 1);
+      if (Math.random() < 0.3) addSpark(root.position.x, root.position.y + r * 2, root.position.z, Math.random() < 0.5 ? "#ff8a3d" : "#ffd740", 1);
     } else if (e.slowFactor < 1 || frozen) {
       em.set("#29e6ff");
       ud.bodyMat.emissiveIntensity = 0.45;
@@ -1958,8 +2021,8 @@ const View = (() => {
           addDebris(tmpPos.x, tmpPos.y, tmpPos.z, ud.baseColor);
         }
       }
-      if (k < 0.5 && Math.random() < (0.5 - k) * 0.6) addSpark(root.position.x, ROAD_Y + r * 1.4, root.position.z, Math.random() < 0.5 ? "#ffb300" : "#fff3c4", 1.6);
-      if (k < 0.3 && Math.random() < 0.2) addSmoke(root.position.x, ROAD_Y + r * 2, root.position.z);
+      if (k < 0.5 && Math.random() < (0.5 - k) * 0.6) addSpark(root.position.x, root.position.y + r * 1.4, root.position.z, Math.random() < 0.5 ? "#ffb300" : "#fff3c4", 1.6);
+      if (k < 0.3 && Math.random() < 0.2) addSmoke(root.position.x, root.position.y + r * 2, root.position.z);
       if (k < 0.3) ud.model.position.x += (Math.random() - 0.5) * 0.03;
     }
   }
@@ -2002,7 +2065,7 @@ const View = (() => {
     if (turn > Math.PI) turn -= Math.PI * 2;
     if (turn < -Math.PI) turn += Math.PI * 2;
     ud.lastDir = s.dir;
-    g.position.set(wx(s.x), PAD_TOP + 0.42 + Math.sin(state.time * 3 + s.path) * 0.04, wz(s.y));
+    g.position.set(wx(s.x), PAD_TOP + 0.42 + bp(s.x, s.y) + Math.sin(state.time * 3 + s.path) * 0.04, wz(s.y));
     g.rotation.y = -s.dir;
     ud.model.rotation.x = THREE.MathUtils.lerp(ud.model.rotation.x, THREE.MathUtils.clamp(-turn * 12, -0.6, 0.6), 0.2);
     ud.model.userData.engine.scale.setScalar(s.contact ? 0.2 : 0.28 + Math.random() * 0.08);
@@ -2037,7 +2100,7 @@ const View = (() => {
     if (p.kind === "shell") {
       const k = Math.min(1, p.time / p.dur);
       const h = PAD_TOP + 0.6 + (ROAD_Y + 0.1 - PAD_TOP - 0.6) * k + Math.sin(k * Math.PI) * 3.2;
-      g.position.set(wx(p.x), h, wz(p.y));
+      g.position.set(wx(p.x), h + bp(p.x, p.y) + (1 - k) * (p.sx !== undefined ? towerGround(p.sx, p.sy) - bp(p.sx, p.sy) : 0), wz(p.y));
       g.rotation.y = -p.angle;
       g.rotation.z = (0.5 - k) * 2.4;
       if (Math.random() < 0.5) addSpark(g.position.x, g.position.y, g.position.z, "#ffd740", 0.3);
@@ -2050,7 +2113,7 @@ const View = (() => {
     const endH = ROAD_Y + 0.3;
     let h = startH + (endH - startH) * f;
     if (p.kind === "plasma") h += Math.sin(f * Math.PI) * 0.7;
-    g.position.set(wx(p.x), h, wz(p.y));
+    g.position.set(wx(p.x), h + bp(p.x, p.y) + (1 - f) * (towerGround(p.sx, p.sy) - bp(p.sx, p.sy)), wz(p.y));
     g.rotation.y = -p.angle;
     if (p.kind === "shard") g.rotation.x = state.time * 10;
   }
@@ -2072,10 +2135,10 @@ const View = (() => {
     const k = b.life / b.max;
     if (b.from === "sky") {
       beamFrom.set(wx(b.x1), 14, wz(b.y1));
-      beamTo.set(wx(b.x2), ROAD_Y, wz(b.y2));
+      beamTo.set(wx(b.x2), ROAD_Y + bp(b.x2, b.y2), wz(b.y2));
     } else {
-      beamFrom.set(wx(b.x1), b.from === "ground" ? ROAD_Y + 0.15 : PAD_TOP + (b.from === "ship" ? 0.42 : 0.55), wz(b.y1));
-      beamTo.set(wx(b.x2), ROAD_Y + 0.3, wz(b.y2));
+      beamFrom.set(wx(b.x1), (b.from === "tower" || !b.from ? towerGround(b.x1, b.y1) : bp(b.x1, b.y1)) + (b.from === "ground" ? ROAD_Y + 0.15 : PAD_TOP + (b.from === "ship" ? 0.42 : 0.55)), wz(b.y1));
+      beamTo.set(wx(b.x2), ROAD_Y + 0.3 + bp(b.x2, b.y2), wz(b.y2));
     }
     beamDir.subVectors(beamTo, beamFrom);
     const len = beamDir.length();
@@ -2089,24 +2152,25 @@ const View = (() => {
   // Ereignisse aus der Spiellogik als Effekte anzeigen
   function handleEvents(events) {
     for (const ev of events) {
+      const base = ROAD_Y + (ev.x !== undefined ? bp(ev.x, ev.y) : 0);
       if (ev.type === "pop") {
         const x = wx(ev.x);
         const z = wz(ev.y);
         const n = ev.dead ? 7 : 4;
-        for (let i = 0; i < n; i++) addSpark(x, ROAD_Y + 0.35, z, ev.color, ev.dead ? 2.2 : 1.4);
-        if (ev.dead && Math.random() < 0.5) burstStars(x, ROAD_Y + 0.4, z, 1, ev.color);
+        for (let i = 0; i < n; i++) addSpark(x, base + 0.35, z, ev.color, ev.dead ? 2.2 : 1.4);
+        if (ev.dead && Math.random() < 0.5) burstStars(x, base + 0.4, z, 1, ev.color);
       } else if (ev.type === "heavyDeath") {
         const x = wx(ev.x);
         const z = wz(ev.y);
         const big = ev.kind !== "tank";
-        for (let i = 0; i < (big ? 60 : 24); i++) addSpark(x, ROAD_Y + 0.6, z, i % 3 ? ev.color : "#ffd740", big ? 4 : 2.6);
-        burstStars(x, ROAD_Y + 0.8, z, big ? 20 : 8, "#ffffff");
+        for (let i = 0; i < (big ? 60 : 24); i++) addSpark(x, base + 0.6, z, i % 3 ? ev.color : "#ffd740", big ? 4 : 2.6);
+        burstStars(x, base + 0.8, z, big ? 20 : 8, "#ffffff");
       } else if (ev.type === "deflect") {
-        for (let i = 0; i < 3; i++) addSpark(wx(ev.x), ROAD_Y + 0.4, wz(ev.y), "#ffffff", 1.6);
+        for (let i = 0; i < 3; i++) addSpark(wx(ev.x), base + 0.4, wz(ev.y), "#ffffff", 1.6);
       } else if (ev.type === "regen") {
-        burstStars(wx(ev.x), ROAD_Y + 0.5, wz(ev.y), 2, "#69f0ae");
+        burstStars(wx(ev.x), base + 0.5, wz(ev.y), 2, "#69f0ae");
       } else if (ev.type === "shatter") {
-        for (let i = 0; i < 8; i++) addSpark(wx(ev.x), ROAD_Y + 0.4, wz(ev.y), "#c8f2ff", 2.4);
+        for (let i = 0; i < 8; i++) addSpark(wx(ev.x), base + 0.4, wz(ev.y), "#c8f2ff", 2.4);
       }
     }
   }
@@ -2122,7 +2186,7 @@ const View = (() => {
 
   function updateRing(ring, m) {
     const k = ring.life / ring.max;
-    m.position.set(wx(ring.x), ROAD_Y + 0.06, wz(ring.y));
+    m.position.set(wx(ring.x), ROAD_Y + 0.06 + bp(ring.x, ring.y), wz(ring.y));
     m.scale.setScalar((ring.r / TILE) * (1.1 - k * 0.5));
     m.material.opacity = k;
   }
@@ -2159,7 +2223,7 @@ const View = (() => {
 
   function updateText(t, s) {
     const k = t.life / t.max;
-    s.position.set(wx(t.x), 0.8 + (1 - k) * 0.6, wz(t.y));
+    s.position.set(wx(t.x), 0.8 + (1 - k) * 0.6 + bp(t.x, t.y), wz(t.y));
     s.material.opacity = Math.min(1, k * 2);
   }
 
@@ -2287,7 +2351,7 @@ const View = (() => {
       if (n >= MAX_PARTICLES) break;
       const s = 0.07 * Math.max(0.05, pa.life / pa.max);
       tmpMatrix.compose(
-        tmpPos.set(wx(pa.x), ROAD_Y + pa.z / TILE, wz(pa.y)),
+        tmpPos.set(wx(pa.x), ROAD_Y + pa.z / TILE + bp(pa.x, pa.y), wz(pa.y)),
         tmpQuat.setFromAxisAngle(tmpAxis, pa.life * 6),
         tmpScale.setScalar(s)
       );
@@ -2304,7 +2368,7 @@ const View = (() => {
       }
       v.vy -= v.gravity * dt;
       v.x += v.vx * dt;
-      v.y = Math.max(ROAD_Y, v.y + v.vy * dt);
+      v.y = Math.max(ROAD_Y + gw(v.x, v.z), v.y + v.vy * dt);
       v.z += v.vz * dt;
       if (n >= MAX_PARTICLES) continue;
       const k = v.life / v.max;
@@ -2335,7 +2399,7 @@ const View = (() => {
         const d = (k * spacing + offset) % pl.length;
         const p = pointAt(pl, d);
         tmpQuat.setFromAxisAngle(tmpPos.set(0, 1, 0), -p.angle);
-        tmpMatrix.compose(tmpPos.set(p.x, ROAD_Y + 0.01, p.z), tmpQuat, tmpScale.set(1, 1, 1));
+        tmpMatrix.compose(tmpPos.set(p.x, ROAD_Y + 0.01 + bw(p.x, p.z), p.z), tmpQuat, tmpScale.set(1, 1, 1));
         roadDashes.setMatrixAt(i++, tmpMatrix);
       }
     }
@@ -2350,7 +2414,7 @@ const View = (() => {
     const showRange = (x, z, px) => {
       if (!px) return;
       rangeGroup.visible = true;
-      rangeGroup.position.set(x, ROAD_Y + 0.03, z);
+      rangeGroup.position.set(x, ROAD_Y + 0.03 + gw(x, z), z);
       rangeGroup.scale.setScalar(px / TILE);
     };
 
@@ -2361,7 +2425,7 @@ const View = (() => {
       for (let r = 0; r < ROWS; r++) {
         for (let c = 0; c < COLS; c++) {
           if (grid[r][c] !== "pad" || towerAt(c, r)) continue;
-          tmpMatrix.makeTranslation(tileX(c), PAD_TOP + 0.01, tileZ(r));
+          tmpMatrix.makeTranslation(tileX(c), PAD_TOP + 0.02 + gw(tileX(c), tileZ(r)), tileZ(r));
           holoFill.setMatrixAt(n, tmpMatrix);
           holoEdge.setMatrixAt(n, tmpMatrix);
           n++;
@@ -2383,7 +2447,7 @@ const View = (() => {
       hoverMesh.visible = true;
       hoverMesh.scale.setScalar(2.1);
       hoverMesh.material.color.set(ok ? "#ffffff" : "#ff2a4a").multiplyScalar(1.5);
-      hoverMesh.position.set(cx, PAD_TOP + 0.015, cz);
+      hoverMesh.position.set(cx, PAD_TOP + 0.03 + gw(cx, cz), cz);
       if (ok) showRange(cx, cz, TOWER_TYPES[state.selectedType].base.range);
     }
 
@@ -2394,10 +2458,10 @@ const View = (() => {
       showRange(wx(sel.tower.x), wz(sel.tower.y), towerStats(sel.tower).range);
       selectMesh.visible = true;
       selectMesh.scale.setScalar(2.1);
-      selectMesh.position.set(wx(sel.tower.x), PAD_TOP + 0.02, wz(sel.tower.y));
+      selectMesh.position.set(wx(sel.tower.x), PAD_TOP + 0.03 + towerGround(sel.tower.x, sel.tower.y), wz(sel.tower.y));
     } else if (sel && sel.kind === "obstacle") {
       selectMesh.visible = true;
-      selectMesh.position.set(tileX(sel.col), PAD_TOP + 0.02, tileZ(sel.row));
+      selectMesh.position.set(tileX(sel.col), PAD_TOP + 0.03 + gw(tileX(sel.col), tileZ(sel.row)), tileZ(sel.row));
     }
     selectMesh.material.color.set("#ffd740").multiplyScalar(pulse);
 
@@ -2405,7 +2469,7 @@ const View = (() => {
     const pv = state.preview;
     previewRing.visible = !!(pv && pv.range && state.towers.includes(pv.tower));
     if (previewRing.visible) {
-      previewRing.position.set(wx(pv.tower.x), ROAD_Y + 0.035, wz(pv.tower.y));
+      previewRing.position.set(wx(pv.tower.x), ROAD_Y + 0.035 + towerGround(pv.tower.x, pv.tower.y), wz(pv.tower.y));
       previewRing.scale.setScalar(pv.range / TILE);
     }
   }

@@ -114,6 +114,157 @@ for (const curve of WALK_CURVES) {
   }
 }
 
+// ---------- Gelände: große, weiche Hügel (nur Optik, Höhen in Feld-Einheiten) ----------
+// Der Tunnelberg ist Teil des Geländes; die Straße läuft darunter hindurch.
+const HILL = { x: TUNNEL.col + 0.5, y: (TUNNEL.rowFrom + TUNNEL.rowTo + 1) / 2, rx: 3.3, ry: 3.6, h: 1.25 };
+
+const smooth01 = (t) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
+
+function hillHeight(x, y) {
+  const u = Math.hypot((x - HILL.x) / HILL.rx, (y - HILL.y) / HILL.ry);
+  if (u >= 1) return 0;
+  return HILL.h * smooth01((1 - u) / 0.62);
+}
+
+// Hügel: [x, y, Breite, Höhe]. Die Straße führt über die ersten beiden.
+const BUMPS = [[16.5, 7.4, 2.6, 1.05], [4.5, 9.8, 2.3, 0.85], [20.6, 1.8, 2.2, 0.95], [1.4, 4.6, 2.0, 0.7], [7.2, 12.9, 2.0, 0.6]];
+
+// Grundgelände ohne Tunnelberg und ohne Wege. Am Rand und an den Seen flach.
+function rawHeight(x, y) {
+  const edge = Math.min(x, COLS - x, y, ROWS - y);
+  if (edge <= 0) return 0;
+  let env = smooth01(edge / 2);
+  for (const lake of LAKES) {
+    const c = Math.cos(-lake.rot);
+    const s = Math.sin(-lake.rot);
+    const dx = x - lake.x;
+    const dy = y - lake.y;
+    const q = Math.hypot((dx * c - dy * s) / (lake.rx + 0.7), (dx * s + dy * c) / (lake.ry + 0.7));
+    env *= smooth01((q - 1) / 0.9);
+  }
+  // unter dem Tunnelberg bleibt die Straße eben
+  const tx = Math.max(TUNNEL_RECT.x0 / TILE - x, 0, x - TUNNEL_RECT.x1 / TILE);
+  const ty = Math.max(TUNNEL_RECT.y0 / TILE - y, 0, y - TUNNEL_RECT.y1 / TILE);
+  env *= smooth01((Math.hypot(tx, ty) - 0.2) / 1.5);
+  if (env <= 0) return 0;
+  let h = 0.06 * (1 + Math.sin(x * 0.5 + 1.3) * Math.cos(y * 0.55 - 0.4));
+  for (const [bx, by, r, a] of BUMPS) h += a * Math.exp(-((x - bx) ** 2 + (y - by) ** 2) / (r * r));
+  return env * h;
+}
+
+// Straße und Gehwege werden ins Gelände eingeschnitten: quer immer waagerecht,
+// längs mit sanfter Steigung. Das Ergebnis liegt in zwei Höhenrastern:
+// H = sichtbarer Boden (mit Tunnelberg), B = Höhe der Alien-Straße (unter dem Berg eben).
+const TERRAIN_RES = 8; // Rasterpunkte pro Feld
+const TERRAIN_PAD = 1; // Rand außerhalb der Karte in Feldern
+let terrainGrids = null;
+
+function buildTerrain() {
+  const W = (COLS + TERRAIN_PAD * 2) * TERRAIN_RES + 1;
+  const D = (ROWS + TERRAIN_PAD * 2) * TERRAIN_RES + 1;
+  const pos = (i, j) => [i / TERRAIN_RES - TERRAIN_PAD, j / TERRAIN_RES - TERRAIN_PAD];
+  const H = new Float32Array(W * D);
+  const B = new Float32Array(W * D);
+  for (let j = 0; j < D; j++) {
+    for (let i = 0; i < W; i++) {
+      const [x, y] = pos(i, j);
+      B[j * W + i] = rawHeight(x, y);
+      H[j * W + i] = B[j * W + i] + hillHeight(x, y);
+    }
+  }
+  const sample = (G, x, y) => {
+    const fx = Math.max(0, Math.min(W - 1.001, (x + TERRAIN_PAD) * TERRAIN_RES));
+    const fy = Math.max(0, Math.min(D - 1.001, (y + TERRAIN_PAD) * TERRAIN_RES));
+    const i = Math.floor(fx);
+    const j = Math.floor(fy);
+    const u = fx - i;
+    const v = fy - j;
+    return (G[j * W + i] * (1 - u) + G[j * W + i + 1] * u) * (1 - v) + (G[(j + 1) * W + i] * (1 - u) + G[(j + 1) * W + i + 1] * u) * v;
+  };
+  // Höhenverlauf entlang einer Linie: abtasten und mehrfach glätten (sanfte Steigung)
+  const profile = (pts, G, passes, win) => {
+    const out = [];
+    for (let k = 0; k < pts.length - 1; k++) {
+      const a = pts[k];
+      const b = pts[k + 1];
+      const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 0.1));
+      for (let m = 0; m < n; m++) out.push({ x: a.x + ((b.x - a.x) * m) / n, y: a.y + ((b.y - a.y) * m) / n });
+    }
+    out.push(pts[pts.length - 1]);
+    let h = out.map((p) => sample(G, p.x, p.y));
+    for (let pass = 0; pass < passes; pass++) {
+      h = h.map((_, k) => {
+        let sum = 0;
+        let cnt = 0;
+        for (let o = -win; o <= win; o++) {
+          const q = h[Math.max(0, Math.min(h.length - 1, k + o))];
+          sum += q;
+          cnt++;
+        }
+        return sum / cnt;
+      });
+    }
+    return out.map((p, k) => ({ ...p, h: h[k] }));
+  };
+  // Linie in ein Raster stempeln: innerhalb halfW genau auf Profilhöhe, danach weicher Übergang
+  const stamp = (G, prof, halfW, blend, skip, weights) => {
+    const best = new Float32Array(W * D).fill(1e9);
+    const target = new Float32Array(W * D);
+    const R = halfW + blend;
+    for (const p of prof) {
+      if (skip && skip(p)) continue;
+      const i0 = Math.max(0, Math.floor((p.x - R + TERRAIN_PAD) * TERRAIN_RES));
+      const i1 = Math.min(W - 1, Math.ceil((p.x + R + TERRAIN_PAD) * TERRAIN_RES));
+      const j0 = Math.max(0, Math.floor((p.y - R + TERRAIN_PAD) * TERRAIN_RES));
+      const j1 = Math.min(D - 1, Math.ceil((p.y + R + TERRAIN_PAD) * TERRAIN_RES));
+      for (let j = j0; j <= j1; j++) {
+        for (let i = i0; i <= i1; i++) {
+          const [x, y] = pos(i, j);
+          const d = Math.hypot(x - p.x, y - p.y);
+          if (d < best[j * W + i]) {
+            best[j * W + i] = d;
+            target[j * W + i] = p.h;
+          }
+        }
+      }
+    }
+    for (let k = 0; k < W * D; k++) {
+      if (best[k] > R) continue;
+      const w = 1 - smooth01((best[k] - halfW) / blend);
+      G[k] = G[k] * (1 - w) + target[k] * w;
+      if (weights) weights[k] = Math.max(weights[k], w);
+    }
+  };
+  const inTunnel = (p) => p.x > TUNNEL_RECT.x0 / TILE - 0.6 && p.x < TUNNEL_RECT.x1 / TILE + 0.6 && p.y > TUNNEL_RECT.y0 / TILE && p.y < TUNNEL_RECT.y1 / TILE;
+  const roadW = new Float32Array(W * D);
+  for (const pts of pathPoints) {
+    const tilePts = pts.map((p) => ({ x: p.x / TILE, y: p.y / TILE }));
+    const prof = profile(tilePts, B, 4, 6);
+    stamp(B, prof, 0.55, 0.7, null, null);
+    stamp(H, prof, 0.55, 0.7, inTunnel, roadW);
+  }
+  // Gehwege folgen dem Boden (auch über den Tunnelberg), kreuzen die Straße auf gleicher Höhe
+  const walkGrid = Float32Array.from(H);
+  for (const curve of WALK_CURVES) {
+    const prof = profile(curve, H, 3, 5);
+    stamp(walkGrid, prof, 0.2, 0.45, null, null);
+  }
+  for (let k = 0; k < W * D; k++) H[k] = H[k] * roadW[k] + walkGrid[k] * (1 - roadW[k]);
+  terrainGrids = { H, B, sample };
+}
+
+// Sichtbarer Boden (mit Tunnelberg, Straßen und Gehwegen eingeschnitten)
+function terrainHeight(x, y) {
+  if (!terrainGrids) buildTerrain();
+  return terrainGrids.sample(terrainGrids.H, x, y);
+}
+
+// Höhe der Alien-Straße (unter dem Tunnelberg eben)
+function baseHeight(x, y) {
+  if (!terrainGrids) buildTerrain();
+  return terrainGrids.sample(terrainGrids.B, x, y);
+}
+
 // Stadttor am Ende des Weges (hier starten auch die Raumschiffe)
 const GATE_TILES = [[23, 4], [23, 6]];
 

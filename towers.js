@@ -85,6 +85,8 @@ const Towers = (() => {
     const sum = levels[0] + levels[1] + levels[2];
     const top = Math.max(...levels);
     part(root, GEO.box(1.62, 0.12, 1.62, 0.12), C.chrome("#3a3460", 0.35), [0, 0.06, 0]);
+    // Fundament, das am Hang bis in den Boden reicht
+    part(root, GEO.box(1.56, 1.6, 1.56, 0.06), H.metal("#2a2448", 0.45, 0.6), [0, -0.8, 0]);
     part(root, GEO.flat(0.74, 0.02), C.neon(color, 2.2), [0, 0.125, 0], [0, 0, 0], 1, false);
     const col = type === "station" ? 0.62 : 0.46;
     part(root, GEO.cyl(col * 0.82, col, 0.34, 36), C.chrome("#e8ecff", 0.12), [0, 0.29, 0]);
