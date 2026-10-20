@@ -9,7 +9,9 @@
 - Sagt der Nutzer „warte“ / „erst starten, wenn ich es sage“: nur Wünsche sammeln und zusammenfassen, bis er „Start“ schreibt.
 - Bei größeren Optik-Änderungen zuerst ein **Testbild** schicken und abwarten.
 - Am Ende kurz zusammenfassen: was neu ist, was getestet wurde, was nicht prüfbar war (Musik anhören, echte FPS), welche Entscheidungen selbst getroffen wurden.
-- Das Spiel ist über GitHub Pages erreichbar (Branch `main`, Root): https://bhb1011-creator.github.io/Towerdefense/ (sofern der Nut## Dateien
+- Das Spiel ist über GitHub Pages erreichbar (Branch `main`, Root): https://bhb1011-creator.github.io/Towerdefense/ (sofern der Nutzer Pages eingeschaltet hat).
+
+## Dateien
 
 - `index.html` – Seitenaufbau, Skript-Reihenfolge: lib → `data.js` → `audio.js` → `aliens.js` → `buildings.js` → `towers.js` → `city.js` → `scene.js` → `progress.js` → `game.js`. Neue Dateien auch in `package.json` (`build.files`, Mac-App) eintragen.
 - `data.js` – Karte 24×14 Felder (TILE 40 px): Wege `PATHS`, Tunnel `TUNNEL`/`TUNNEL_RECT`, Seen `LAKES` (glatte Form, `POOLS` = gesperrte Felder), Gehwege `WALKWAYS`/`WALK_CURVES`/`walkTiles`, Gelände (`terrainHeight` = sichtbarer Boden mit Tunnelberg, `baseHeight` = Straßenhöhe; Höhenraster werden beim ersten Aufruf berechnet, Straße und Gehwege sind eingeschnitten). Dazu Gebäude `OBSTACLES` (10 Arten), Schwierigkeiten, Gegner (`DRONE_LEVELS`, `PROPS`, `HEAVY`), Türme (`TOWER_TYPES`), Wellen.
@@ -33,7 +35,6 @@
 - Pause erlaubt Bauen, Auto-Start, Schwierigkeit Leicht/Normal/Schwer, Autosave nach jeder Welle, 10 Erfolge (Bronze/Silber/Gold).
 - Wünsche des Nutzers zur Optik: Aliens sollen böse aussehen (Alien-Augen), Seen glatt und rund mit Uferweg, Gehwege geschwungen, Gelände sanft hügelig mit eingeschnittenen Wegen, Sci-Fi nur auf dem Spielfeld (Stadt = Retro-Miami der 80er).
 
-r, Autosave nach jeder Welle.
 
 ## Testen
 
