@@ -69,23 +69,48 @@ const POOLS = LAKES.map((lake) => {
   return tiles;
 });
 
-// Gehwege auf dem Boden: führen aus der Karte hinaus und queren die Alien-Straße.
-// Koordinaten in Feldern (ganze Zahl = Feldmitte). Man kann darauf bauen, Gebäude stehen am Rand.
+// Geschwungene Gehwege auf dem Boden: führen aus der Karte hinaus und queren die Alien-Straße.
+// Kontrollpunkte in Feld-Einheiten (Feld c reicht von c bis c+1). Man kann darauf bauen,
+// Gebäude stehen am Rand. Die Kurven werden weich durch die Punkte gelegt.
 const WALKWAYS = [
-  [[2, -0.8], [2, 9]],
-  [[-0.8, 9], [10, 9]],
-  [[10, 6], [10, ROWS - 0.2]],
-  [[5, 0], [COLS - 0.2, 0]],
-  [[14, -0.8], [14, ROWS - 0.2]],
-  [[14, 7], [COLS - 0.2, 7]],
+  [[-0.3, 9.3], [1.6, 9.9], [3.2, 9.4], [4.5, 9.5], [6.2, 9.9], [7.4, 9.4], [8.5, 9.5], [9.7, 9.8], [10.5, 10.6], [10.5, 11.5], [10.8, 12.7], [10.4, ROWS + 0.3]],
+  [[14.3, -0.3], [14.8, 1.3], [14.5, 3.5], [13.9, 5.2], [14.6, 6.8], [15.0, 8.4], [14.3, 10.2], [13.8, 11.8], [14.4, ROWS + 0.3]],
+  [[14.6, 6.8], [15.6, 7.5], [16.5, 7.5], [17.6, 7.1], [18.8, 6.7], [19.7, 7.4], [20.5, 7.5], [21.4, 7.2], [22.6, 7.5], [COLS + 0.3, 7.6]],
+  [[2.5, -0.3], [2.2, 0.7], [2.5, 1.5], [3.0, 3.1], [2.4, 4.8], [1.8, 6.4], [2.3, 8.0], [1.6, 9.9]],
+  [[2.3, 0.6], [4.5, 0.4], [6.5, 0.6], [9.0, 0.35], [11.5, 0.6], [13.2, 0.45], [14.7, 1.0]],
 ];
+const WALK_WIDTH = 0.3;
+
+// Catmull-Rom-Kurve durch die Punkte, gleichmäßig abgetastet
+function sampleCurve(pts, step = 0.08) {
+  const out = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[Math.max(0, i - 1)];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[Math.min(pts.length - 1, i + 2)];
+    const n = Math.max(2, Math.ceil(Math.hypot(p2[0] - p1[0], p2[1] - p1[1]) / step));
+    for (let k = 0; k < n; k++) {
+      const t = k / n;
+      const t2 = t * t;
+      const t3 = t2 * t;
+      const f = (a, b, c, d) => 0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
+      out.push({ x: f(p0[0], p1[0], p2[0], p3[0]), y: f(p0[1], p1[1], p2[1], p3[1]) });
+    }
+  }
+  const last = pts[pts.length - 1];
+  out.push({ x: last[0], y: last[1] });
+  return out;
+}
+const WALK_CURVES = WALKWAYS.map((pts) => sampleCurve(pts));
 const walkTiles = new Set();
-for (const [[x0, y0], [x1, y1]] of WALKWAYS) {
-  const n = Math.round(Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)) * 2);
-  for (let i = 0; i <= n; i++) {
-    const c = Math.round(x0 + ((x1 - x0) * i) / n);
-    const r = Math.round(y0 + ((y1 - y0) * i) / n);
-    if (c >= 0 && c < COLS && r >= 0 && r < ROWS) walkTiles.add(`${c},${r}`);
+for (const curve of WALK_CURVES) {
+  for (const p of curve) {
+    for (const [ox, oy] of [[0, 0], [WALK_WIDTH / 2, 0], [-WALK_WIDTH / 2, 0], [0, WALK_WIDTH / 2], [0, -WALK_WIDTH / 2]]) {
+      const c = Math.floor(p.x + ox);
+      const r = Math.floor(p.y + oy);
+      if (c >= 0 && c < COLS && r >= 0 && r < ROWS) walkTiles.add(`${c},${r}`);
+    }
   }
 }
 

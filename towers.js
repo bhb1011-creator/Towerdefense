@@ -258,7 +258,9 @@ const Towers = (() => {
             const cage = part(k.gun, GEO.torus(0.26, 0.016, 40), C.chrome("#ffd9c2", 0.06), [0.55, 0, 0], [i * 1.05, i * 0.7, 0]);
             k.spin.push({ obj: cage, axis: "y", speed: 1 + i * 0.6 });
           }
-          k.gun.add(Object.assign(H.glowSprite("#ff8a3d", 1.4), { position: star.position.clone() }));
+          const glow = H.glowSprite("#ff8a3d", 1.4);
+          glow.position.copy(star.position);
+          k.gun.add(glow);
         }
       },
       addon(t, k) {

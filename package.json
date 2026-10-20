@@ -28,6 +28,7 @@
       "audio.js",
       "aliens.js",
       "buildings.js",
+      "towers.js",
       "scene.js",
       "game.js",
       "lib/**",

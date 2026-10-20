@@ -234,6 +234,12 @@ const View = (() => {
   // ---------- Initialisierung ----------
   function init(el) {
     container = el;
+    Towers.init({
+      G, mesh, chrome, metal, neon, glowSprite, makeShipModel, cachedMat: cached,
+      glass: () => cached("glass", () => new THREE.MeshPhysicalMaterial({
+        color: "#bfefff", transparent: true, opacity: 0.22, roughness: 0.02, metalness: 0, clearcoat: 1, depthWrite: false, side: THREE.DoubleSide,
+      })),
+    });
     Buildings.init({
       G, mesh, chrome, metal, neon, holoTexture, windowTexture, makePalm,
       animate: (fn) => animated.push({ fn }),
@@ -986,6 +992,27 @@ const View = (() => {
         }
         g.closePath();
       };
+      // Gehwege: erst die leuchtende Kante (blau, etwas breiter), dann das Pflaster (grün) darüber
+      const curvePath = (curve) => {
+        g.beginPath();
+        curve.forEach((p, i) => g[i ? "lineTo" : "moveTo"]((p.x + FLOOR_MARGIN) * ppt, (p.y + FLOOR_MARGIN) * ppt));
+      };
+      g.lineCap = "round";
+      g.lineJoin = "round";
+      for (const curve of WALK_CURVES) {
+        curvePath(curve);
+        g.strokeStyle = "rgb(0,0,255)";
+        g.lineWidth = (WALK_WIDTH + 0.07) * ppt;
+        g.stroke();
+      }
+      g.globalCompositeOperation = "source-over";
+      for (const curve of WALK_CURVES) {
+        curvePath(curve);
+        g.strokeStyle = "rgb(0,255,0)";
+        g.lineWidth = WALK_WIDTH * ppt;
+        g.stroke();
+      }
+      g.globalCompositeOperation = "lighter";
       const mid = (LAKE_PATH.inner + LAKE_PATH.outer) / 2;
       for (const lake of LAKES) {
         shape(lake, LAKE_PATH.inner);
@@ -1094,9 +1121,19 @@ const View = (() => {
         if (OBSTACLES[t]) {
           const obj = Buildings.make(t, variant[r][c]);
           obj.position.set(tileX(c), PAD_TOP, tileZ(r));
-          // Vorderseite (+Z) zum Gehweg drehen
-          const face = [[0, 1, 0], [0, -1, Math.PI], [1, 0, Math.PI / 2], [-1, 0, -Math.PI / 2]].find(([dc, dr]) => walkTiles.has(`${c + dc},${r + dr}`));
-          if (face) obj.rotation.y = face[2];
+          // Vorderseite (+Z) zum nächsten Gehweg drehen, wenn einer in der Nähe ist
+          let best = null;
+          let bestD = 1.6;
+          for (const curve of WALK_CURVES) {
+            for (const p of curve) {
+              const dd = Math.hypot(p.x - (c + 0.5), p.y - (r + 0.5));
+              if (dd < bestD) {
+                bestD = dd;
+                best = p;
+              }
+            }
+          }
+          if (best) obj.rotation.y = Math.atan2(best.x - (c + 0.5), best.y - (r + 0.5));
           obstacleMeshes.set(`${c},${r}`, obj);
           mapGroup.add(obj);
         }
@@ -1305,36 +1342,6 @@ const View = (() => {
         g.lineTo(x + ppt * 0.12, y);
         g.stroke();
       }
-      // Gehwege: Pflaster mit hellen Bordsteinen
-      const WALK_W = 0.44;
-      const walkRects = WALKWAYS.map(([[x0, y0], [x1, y1]]) => {
-        const ax = Math.min(x0, x1) + 0.5 - WALK_W / 2;
-        const ay = Math.min(y0, y1) + 0.5 - WALK_W / 2;
-        return [ax, ay, Math.abs(x1 - x0) + WALK_W, Math.abs(y1 - y0) + WALK_W];
-      });
-      for (const [x, y, w, h] of walkRects) {
-        g.fillStyle = "#5a4a78";
-        g.fillRect(px(x), py(y), w * ppt, h * ppt);
-      }
-      // Pflastersteine im Halbverband
-      g.save();
-      g.beginPath();
-      for (const [x, y, w, h] of walkRects) g.rect(px(x), py(y), w * ppt, h * ppt);
-      g.clip();
-      const stone = ppt * 0.11;
-      for (let yy = 0; yy < H; yy += stone) {
-        const off = (Math.round(yy / stone) % 2) * stone * 0.5;
-        for (let xx = -stone + off; xx < W; xx += stone) {
-          g.fillStyle = `rgba(${rng() < 0.5 ? "255,240,255" : "20,10,40"},${0.04 + rng() * 0.08})`;
-          g.fillRect(xx + 1, yy + 1, stone - 2, stone - 2);
-        }
-      }
-      g.restore();
-      for (const [x, y, w, h] of walkRects) {
-        g.strokeStyle = "rgba(225,210,255,0.55)";
-        g.lineWidth = ppt * 0.035;
-        g.strokeRect(px(x), py(y), w * ppt, h * ppt);
-      }
       // Warnstreifen an Portalen und Tor
       const hazard = (x0, y0, w, h) => {
         g.save();
@@ -1424,26 +1431,6 @@ const View = (() => {
         g.arc(x, y, 4, 0, Math.PI * 2);
         g.fill();
       }
-      // feine Leuchtlinien an den Gehwegkanten
-      for (const [[x0, y0], [x1, y1]] of WALKWAYS) {
-        const horiz = Math.abs(x1 - x0) > Math.abs(y1 - y0);
-        for (const side of [-1, 1]) {
-          g.strokeStyle = side < 0 ? "rgba(255,90,200,0.75)" : "rgba(80,230,255,0.75)";
-          g.lineWidth = 3;
-          g.setLineDash([ppt * 0.3, ppt * 0.18]);
-          g.beginPath();
-          const o = side * 0.25;
-          if (horiz) {
-            g.moveTo(px(Math.min(x0, x1) + 0.3), py(y0 + 0.5 + o));
-            g.lineTo(px(Math.max(x0, x1) + 0.7), py(y0 + 0.5 + o));
-          } else {
-            g.moveTo(px(x0 + 0.5 + o), py(Math.min(y0, y1) + 0.3));
-            g.lineTo(px(x0 + 0.5 + o), py(Math.max(y0, y1) + 0.7));
-          }
-          g.stroke();
-        }
-      }
-      g.setLineDash([]);
       // kleine LED-Punkte in den Fugen
       for (const [x0, y0, x1] of panels) {
         if (rng() < 0.5) continue;
@@ -1545,37 +1532,41 @@ const View = (() => {
   function makeCrosswalks() {
     const g = new THREE.Group();
     const stripeMat = cached("zebra", () => new THREE.MeshStandardMaterial({ color: "#f4eeff", emissive: "#ffffff", emissiveIntensity: 0.35, roughness: 0.5 }));
-    for (const [[x0, y0], [x1, y1]] of WALKWAYS) {
-      const horiz = Math.abs(x1 - x0) > Math.abs(y1 - y0);
-      for (const key of walkTiles) {
-        if (!pathTiles.has(key)) continue;
-        const [c, r] = key.split(",").map(Number);
-        const onLine = horiz ? r === y0 && c >= Math.min(x0, x1) && c <= Math.max(x0, x1) : c === x0 && r >= Math.min(y0, y1) && r <= Math.max(y0, y1);
-        if (!onLine) continue;
-        // Streifen liegen quer zur Laufrichtung der Fußgänger
-        for (let i = -2; i <= 2; i++) {
-          const m = mesh(G("zebraStripe", () => new THREE.PlaneGeometry(0.09, 0.42).rotateX(-Math.PI / 2)), stripeMat);
-          if (horiz) m.position.set(tileX(c) + i * 0.17, ROAD_Y + 0.008, tileZ(r));
-          else {
-            m.rotation.y = Math.PI / 2;
-            m.position.set(tileX(c), ROAD_Y + 0.008, tileZ(r) + i * 0.17);
+    for (const curve of WALK_CURVES) {
+      // zusammenhängende Abschnitte auf der Straße finden
+      let run = [];
+      const flush = () => {
+        if (run.length > 2) {
+          const a = run[0];
+          const b = run[run.length - 1];
+          const m = run[Math.floor(run.length / 2)];
+          const ang = Math.atan2(b.y - a.y, b.x - a.x); // Laufrichtung der Fußgänger
+          const dx = Math.cos(ang);
+          const dz = Math.sin(ang);
+          for (let i = -2; i <= 2; i++) {
+            const st = mesh(G("zebraStripe", () => new THREE.PlaneGeometry(0.09, 0.4).rotateX(-Math.PI / 2)), stripeMat);
+            st.position.set(m.x - COLS / 2 + dx * i * 0.17, ROAD_Y + 0.008, m.y - ROWS / 2 + dz * i * 0.17);
+            st.rotation.y = -ang;
+            g.add(st);
           }
-          g.add(m);
+          for (const s of [-1, 1]) {
+            const post = new THREE.Group();
+            post.position.set(m.x - COLS / 2 + dx * s * 0.62 - dz * 0.24, PAD_TOP, m.y - ROWS / 2 + dz * s * 0.62 + dx * 0.24);
+            const pole = mesh(G("crossPole", () => new THREE.CylinderGeometry(0.012, 0.016, 0.42, 6)), metal("#e8ecff", 0.25, 1));
+            pole.position.y = 0.21;
+            const light = mesh(G("crossLight", () => new THREE.RoundedBoxGeometry(0.06, 0.09, 0.06, 2, 0.015)), neon(s < 0 ? "#69f0ae" : "#ff2a4a", 2.6));
+            light.position.y = 0.44;
+            post.add(pole, light);
+            g.add(post);
+          }
         }
-        for (const s of [-1, 1]) {
-          const post = new THREE.Group();
-          if (horiz) post.position.set(tileX(c), PAD_TOP, tileZ(r) + s * 0.3);
-          else post.position.set(tileX(c) + s * 0.3, PAD_TOP, tileZ(r));
-          if (horiz) post.position.x += s * 0.5;
-          else post.position.z += s * 0.5;
-          const pole = mesh(G("crossPole", () => new THREE.CylinderGeometry(0.012, 0.016, 0.42, 6)), metal("#e8ecff", 0.25, 1));
-          pole.position.y = 0.21;
-          const light = mesh(G("crossLight", () => new THREE.RoundedBoxGeometry(0.06, 0.09, 0.06, 2, 0.015)), neon(s < 0 ? "#69f0ae" : "#ff2a4a", 2.6));
-          light.position.y = 0.44;
-          post.add(pole, light);
-          g.add(post);
-        }
+        run = [];
+      };
+      for (const p of curve) {
+        if (pathTiles.has(`${Math.floor(p.x)},${Math.floor(p.y)}`)) run.push(p);
+        else flush();
       }
+      flush();
     }
     return g;
   }
@@ -1760,189 +1751,70 @@ const View = (() => {
 
   // ---------- Türme ----------
   function makeTower(t) {
-    const type = TOWER_TYPES[t.type];
     const g = new THREE.Group();
-    const head = new THREE.Group();
-    const gun = new THREE.Group();
-    head.add(gun);
-    const ud = { head, gun, pips: new THREE.Group(), extras: new THREE.Group(), pipKey: null, spin: [] };
-
-    if (t.type === "station") {
-      const base = mesh(G("stationBase", () => new THREE.CylinderGeometry(0.4, 0.44, 0.22, 36)), chrome("#e8ecff", 0.12), { cast: true, receive: true });
-      base.position.y = PAD_TOP + 0.11;
-      const dome = mesh(G("stationDome", () => new THREE.SphereGeometry(0.3, 28, 14, 0, Math.PI * 2, 0, Math.PI / 2)), chrome("#ffe6fb", 0.06), { cast: true });
-      dome.position.y = PAD_TOP + 0.22;
-      const hangar = mesh(G("stationHangar", () => new THREE.RoundedBoxGeometry(0.2, 0.12, 0.04, 2, 0.02)), neon("#ffd740", 2));
-      hangar.position.set(0, PAD_TOP + 0.3, 0.29);
-      const ring = mesh(G("stationRing", () => new THREE.TorusGeometry(0.46, 0.03, 8, 48).rotateX(Math.PI / 2)), neon("#ff4fd8", 2.6));
-      ring.position.y = PAD_TOP + 0.24;
-      const ant = mesh(G("stationAnt", () => new THREE.CylinderGeometry(0.012, 0.02, 0.4, 6)), metal("#c0c8e8", 0.2, 1));
-      ant.position.set(0.12, PAD_TOP + 0.65, -0.05);
-      const beacon = mesh(G("beacon", () => new THREE.SphereGeometry(0.035, 10, 8)), neon("#ff2a4a", 3));
-      beacon.position.set(0.12, PAD_TOP + 0.86, -0.05);
-      const dish = mesh(G("dish", () => new THREE.SphereGeometry(0.12, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2.6)), chrome("#ffffff", 0.1));
-      dish.position.set(-0.15, PAD_TOP + 0.5, -0.05);
-      dish.rotation.set(0.6, 0, 0.5);
-      g.add(base, dome, hangar, ring, ant, beacon, dish);
-      const idle = makeShipModel();
-      idle.scale.setScalar(0.8);
-      g.add(idle);
-      ud.station = { ring, beacon, idle, dish };
-    } else {
-      const mortar = t.type === "mortar";
-      const base = mesh(G(mortar ? "mortarBase" : "towerBase", () => mortar ? new THREE.CylinderGeometry(0.36, 0.42, 0.28, 32) : new THREE.CylinderGeometry(0.3, 0.38, 0.36, 32)),
-        chrome(mortar ? "#fff2c4" : "#e8ecff", 0.12), { cast: true, receive: true });
-      base.position.y = PAD_TOP + (mortar ? 0.14 : 0.18);
-      const ring = mesh(G(mortar ? "mortarRing" : "towerRing", () => new THREE.TorusGeometry(mortar ? 0.39 : 0.33, 0.025, 8, 40).rotateX(Math.PI / 2)), neon(type.color, 2.6));
-      ring.position.y = PAD_TOP + (mortar ? 0.26 : 0.34);
-      const foot = mesh(G("towerFoot", () => new THREE.TorusGeometry(0.39, 0.02, 8, 40).rotateX(Math.PI / 2)), neon(type.color, 1.8));
-      foot.position.y = PAD_TOP + 0.02;
-      g.add(base, ring, foot);
-      head.position.y = PAD_TOP + (mortar ? 0.3 : 0.42);
-
-      if (t.type === "laser") {
-        const body = mesh(G("laserBody", () => new THREE.SphereGeometry(0.19, 24, 16)), chrome("#d8f7ff", 0.08), { cast: true });
-        body.scale.set(1.35, 0.8, 1);
-        body.position.y = 0.08;
-        gun.add(body);
-        for (const s of [-1, 1]) {
-          const barrel = mesh(G("laserBarrel", () => new THREE.CapsuleGeometry(0.03, 0.34, 4, 10).rotateZ(Math.PI / 2)), metal("#3a3f5c", 0.25, 1));
-          barrel.position.set(0.25, 0.08, s * 0.08);
-          const tip = mesh(G("laserTip", () => new THREE.SphereGeometry(0.035, 10, 8)), neon("#29e6ff", 3));
-          tip.position.set(0.45, 0.08, s * 0.08);
-          gun.add(barrel, tip);
-        }
-        const core = mesh(G("laserCore", () => new THREE.SphereGeometry(0.06, 12, 8)), neon("#29e6ff", 2.5));
-        core.position.y = 0.22;
-        gun.add(core);
-      } else if (t.type === "plasma") {
-        const turret = mesh(G("plasmaTurret", () => new THREE.SphereGeometry(0.24, 24, 16)), chrome("#ffd9c2", 0.1), { cast: true });
-        turret.position.y = 0.08;
-        head.add(turret);
-        gun.position.y = 0.12;
-        const barrel = mesh(G("plasmaBarrel", () => new THREE.CapsuleGeometry(0.09, 0.36, 6, 16).rotateZ(Math.PI / 2)), metal("#2a2d44", 0.2, 1), { cast: true });
-        barrel.position.x = 0.28;
-        gun.add(barrel);
-        for (let i = 0; i < 3; i++) {
-          const coil = mesh(G("plasmaCoil", () => new THREE.TorusGeometry(0.105, 0.02, 8, 20).rotateY(Math.PI / 2)), neon("#ff8a3d", 2.8));
-          coil.position.x = 0.18 + i * 0.1;
-          gun.add(coil);
-        }
-        gun.rotation.z = 0.18;
-      } else if (t.type === "cryo") {
-        const crystal = mesh(G("cryoCrystal", () => new THREE.OctahedronGeometry(0.19, 0)), new THREE.MeshPhysicalMaterial({
-          color: "#e6dcff", metalness: 0.4, roughness: 0.05, iridescence: 1, iridescenceIOR: 1.8,
-          emissive: "#7c4dff", emissiveIntensity: 0.9, clearcoat: 1, flatShading: true,
-        }), { cast: true });
-        crystal.userData.ownMaterial = true;
-        crystal.scale.y = 1.7;
-        crystal.position.y = 0.32;
-        gun.add(crystal);
-        ud.crystal = crystal;
-        for (let i = 0; i < 2; i++) {
-          const orbit = mesh(G("cryoOrbit", () => new THREE.TorusGeometry(0.28, 0.015, 6, 40)), neon(i ? "#29e6ff" : "#b388ff", 2.6));
-          orbit.position.y = 0.32;
-          orbit.rotation.x = Math.PI / 2 + (i ? 0.5 : -0.5);
-          head.add(orbit);
-          ud.spin.push(orbit);
-        }
-      } else if (mortar) {
-        const dome = mesh(G("mortarDome", () => new THREE.SphereGeometry(0.27, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2)), chrome("#ffe6a0", 0.1), { cast: true });
-        head.add(dome);
-        gun.position.y = 0.12;
-        const barrel = mesh(G("mortarBarrel", () => new THREE.CylinderGeometry(0.1, 0.13, 0.5, 20).rotateZ(-Math.PI / 2)), metal("#2a2d44", 0.25, 1), { cast: true });
-        barrel.position.x = 0.2;
-        const muzzle = mesh(G("mortarMuzzle", () => new THREE.TorusGeometry(0.11, 0.025, 8, 24).rotateY(Math.PI / 2)), neon("#ffd740", 3));
-        muzzle.position.x = 0.45;
-        gun.add(barrel, muzzle);
-        gun.rotation.z = 0.95; // steil nach oben
-        // Fadenkreuz am Zielpunkt
-        const marker = new THREE.Group();
-        const markMat = new THREE.MeshBasicMaterial({ color: tmpColor.set("#ffd740").multiplyScalar(1.6), transparent: true, opacity: 0.35, depthWrite: false });
-        marker.add(new THREE.Mesh(G("crossRing", () => new THREE.RingGeometry(0.42, 0.48, 40).rotateX(-Math.PI / 2)), markMat));
-        for (let i = 0; i < 4; i++) {
-          const tick = new THREE.Mesh(G("crossTick", () => new THREE.PlaneGeometry(0.06, 0.3).rotateX(-Math.PI / 2)), markMat);
-          const a = (i / 4) * Math.PI * 2;
-          tick.position.set(Math.cos(a) * 0.6, 0, Math.sin(a) * 0.6);
-          tick.rotation.y = -a + Math.PI / 2;
-          marker.add(tick);
-        }
-        marker.children[0].userData.ownMaterial = true;
-        ud.marker = marker;
-        ud.markMat = markMat;
-        g.add(marker);
+    const ud = { model: null, key: null, marker: null, markMat: null, idle: null };
+    if (t.type === "mortar") {
+      // Fadenkreuz am Zielpunkt
+      const marker = new THREE.Group();
+      const markMat = new THREE.MeshBasicMaterial({ color: tmpColor.set("#ffd740").multiplyScalar(1.6), transparent: true, opacity: 0.35, depthWrite: false });
+      marker.add(new THREE.Mesh(G("crossRing", () => new THREE.RingGeometry(0.42, 0.48, 40).rotateX(-Math.PI / 2)), markMat));
+      for (let i = 0; i < 4; i++) {
+        const tick = new THREE.Mesh(G("crossTick", () => new THREE.PlaneGeometry(0.06, 0.3).rotateX(-Math.PI / 2)), markMat);
+        const a = (i / 4) * Math.PI * 2;
+        tick.position.set(Math.cos(a) * 0.6, 0, Math.sin(a) * 0.6);
+        tick.rotation.y = -a + Math.PI / 2;
+        marker.add(tick);
       }
+      marker.children[0].userData.ownMaterial = true;
+      ud.marker = marker;
+      ud.markMat = markMat;
+      g.add(marker);
     }
-    g.add(head, ud.pips, ud.extras);
+    if (t.type === "station") {
+      ud.idle = makeShipModel();
+      ud.idle.scale.setScalar(0.9);
+      g.add(ud.idle);
+    }
     g.position.set(wx(t.x), 0, wz(t.y));
     g.userData = ud;
-    burstStars(wx(t.x), PAD_TOP + 0.5, wz(t.y), 10, type.color);
+    burstStars(wx(t.x), PAD_TOP + 0.5, wz(t.y), 10, TOWER_TYPES[t.type].color);
     return g;
   }
 
   function updateTower(t, g) {
     const ud = g.userData;
     const time = state.time;
-    if (t.type === "station") {
-      const st = ud.station;
-      st.ring.rotation.y = time * 1.2;
-      st.ring.scale.setScalar(1 + t.recoil * 0.15);
-      st.beacon.visible = Math.sin(time * 4 + t.col) > 0;
-      st.dish.rotation.y = time * 0.6;
-      st.idle.position.set(0, PAD_TOP + 0.62 + Math.sin(time * 2 + t.row) * 0.05, 0);
-      st.idle.rotation.y = time * 0.8;
-      st.idle.visible = t.recoil < 0.3;
-    } else {
-      ud.head.rotation.y = t.type === "cryo" ? 0 : -t.angle;
-      ud.gun.position.x = -t.recoil * (t.type === "mortar" ? 0.04 : 0.07);
-      if (ud.crystal) {
-        ud.crystal.rotation.y = time * 1.5;
-        ud.crystal.position.y = 0.34 + Math.sin(time * 2 + t.col) * 0.05;
-        ud.crystal.material.emissiveIntensity = 0.7 + t.recoil * 1.6;
-      }
-      ud.spin.forEach((o, i) => { o.rotation.z = time * (i ? -1.6 : 1.2); });
-      if (ud.marker) {
-        const aim = state.aiming === t && state.hoverPoint ? state.hoverPoint : t.aim;
-        ud.marker.position.set(wx(aim.x) - g.position.x, ROAD_Y + 0.03, wz(aim.y) - g.position.z);
-        ud.marker.rotation.y = time * 0.8;
-        const active = state.aiming === t || (state.selected && state.selected.tower === t);
-        ud.markMat.opacity = active ? 0.95 : 0.3;
-        ud.marker.scale.setScalar((active ? 1 : 0.8) * (1 + Math.sin(time * 4) * 0.05));
-        if (t.priority !== "point" && towerStats(t).autoTarget && !active) ud.markMat.opacity = 0.12;
-      }
-    }
-    for (const x of ud.extras.children) if (x.userData.spin) x.rotation.y = time * x.userData.spin;
-    // Ausbaustufen als leuchtende Kugeln am Sockel, ab Stufe 3 und 5 zusätzlicher Schmuck
+    // Modell neu bauen, wenn sich die Ausbaustufen geändert haben
     const key = t.levels.join("");
-    if (ud.pipKey !== key) {
-      if (ud.pipKey !== null) burstStars(g.position.x, PAD_TOP + 0.6, g.position.z, 14, "#ffffff");
-      ud.pipKey = key;
-      for (const grp of [ud.pips, ud.extras]) while (grp.children.length) grp.remove(grp.children[0]);
-      const rad = t.type === "station" ? 0.46 : 0.41;
-      t.levels.forEach((lvl, p) => {
-        const center = Math.PI / 2 + (p - 1) * 1.15;
-        for (let i = 0; i < lvl; i++) {
-          const a = center + (i - (lvl - 1) / 2) * 0.2;
-          const pip = mesh(G("pip", () => new THREE.SphereGeometry(0.03, 10, 8)), neon(PATH_COLORS[p], 3));
-          pip.position.set(Math.cos(a) * rad, PAD_TOP + 0.07, Math.sin(a) * rad);
-          ud.pips.add(pip);
-        }
-      });
-      const top = Math.max(...t.levels);
-      const color = TOWER_TYPES[t.type].color;
-      if (top >= 3) {
-        const band = mesh(G("tierBand", () => new THREE.TorusGeometry(0.36, 0.018, 8, 40).rotateX(Math.PI / 2)), neon(color, 3));
-        band.position.y = PAD_TOP + 0.2;
-        ud.extras.add(band);
+    if (ud.key !== key) {
+      if (ud.model) {
+        g.remove(ud.model.root);
+        disposeObject(ud.model.root);
+        burstStars(g.position.x, PAD_TOP + 0.8, g.position.z, 18, "#ffffff");
       }
-      if (top >= 5) {
-        const crown = mesh(G("tierCrown", () => new THREE.TorusGeometry(0.22, 0.02, 8, 6).rotateX(Math.PI / 2)), neon("#ffffff", 3.5));
-        crown.position.y = PAD_TOP + 1.0;
-        crown.userData.spin = 1.5;
-        const halo = glowSprite(color, 1.2);
-        halo.position.y = PAD_TOP + 1.0;
-        ud.extras.add(crown, halo);
-      }
+      ud.model = Towers.build(t.type, t.levels);
+      ud.model.root.position.y = PAD_TOP;
+      g.add(ud.model.root);
+      ud.key = key;
+    }
+    const m = ud.model;
+    if (m.aims) m.head.rotation.y = -t.angle;
+    m.gun.position.x = -t.recoil * (t.type === "mortar" ? 0.05 : 0.08);
+    Towers.animate(m, time + t.id, t.recoil);
+    if (m.stationRing) m.stationRing.scale.setScalar(1 + t.recoil * 0.15);
+    if (ud.idle) {
+      ud.idle.position.set(0, PAD_TOP + 1.05 + Math.sin(time * 2 + t.id) * 0.05, 0);
+      ud.idle.rotation.y = time * 0.8;
+      ud.idle.visible = t.recoil < 0.3 && Math.max(...t.levels) < 5;
+    }
+    if (ud.marker) {
+      const aim = state.aiming === t && state.hoverPoint ? state.hoverPoint : t.aim;
+      ud.marker.position.set(wx(aim.x) - g.position.x, ROAD_Y + 0.03, wz(aim.y) - g.position.z);
+      ud.marker.rotation.y = time * 0.8;
+      const active = state.aiming === t || (state.selected && state.selected.tower === t);
+      ud.markMat.opacity = active ? 0.95 : 0.3;
+      ud.marker.scale.setScalar((active ? 1 : 0.8) * (1 + Math.sin(time * 4) * 0.05));
+      if (t.priority !== "point" && towerStats(t).autoTarget && !active) ud.markMat.opacity = 0.12;
     }
   }
 
@@ -2538,6 +2410,66 @@ const View = (() => {
     }
   }
 
+  // Vorschaubild eines Turms mit bestimmten Ausbaustufen (für das Upgrade-Fenster), als Bild-URL
+  const previewCache = new Map();
+  let previewKit = null;
+  function towerPreview(type, levels, size = 220) {
+    const key = `${type}|${levels.join("")}|${size}`;
+    if (previewCache.has(key)) return previewCache.get(key);
+    const S = size * 2;
+    if (!previewKit || previewKit.S !== S) {
+      const sc = new THREE.Scene();
+      sc.environment = scene.environment;
+      sc.add(new THREE.HemisphereLight("#b89bff", "#2a0b30", 0.9));
+      const sun = new THREE.DirectionalLight("#ffb09a", 1.1);
+      sun.position.set(3, 5, 4);
+      const rim = new THREE.DirectionalLight("#38e8ff", 1.0);
+      rim.position.set(-4, 3, -3);
+      sc.add(sun, rim);
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = size;
+      previewKit = {
+        S, sc, canvas,
+        cam: new THREE.PerspectiveCamera(30, 1, 0.1, 50),
+        rt: new THREE.WebGLRenderTarget(S, S),
+        buf: new Uint8Array(S * S * 4),
+        big: Object.assign(document.createElement("canvas"), { width: S, height: S }),
+      };
+    }
+    const k = previewKit;
+    const m = Towers.build(type, levels);
+    Towers.animate(m, 1.2, 0);
+    if (m.aims) m.head.rotation.y = 0.5;
+    k.sc.add(m.root);
+    const box = new THREE.Box3().setFromObject(m.root);
+    const c = box.getCenter(new THREE.Vector3());
+    const d = box.getSize(new THREE.Vector3()).length();
+    k.cam.position.set(c.x + d * 0.9, c.y + d * 0.55, c.z + d * 1.35);
+    k.cam.lookAt(c);
+    const prevTarget = renderer.getRenderTarget();
+    const prevClear = renderer.getClearAlpha();
+    renderer.setRenderTarget(k.rt);
+    renderer.setClearColor(0x000000, 0);
+    renderer.clear();
+    renderer.render(k.sc, k.cam);
+    renderer.readRenderTargetPixels(k.rt, 0, 0, S, S, k.buf);
+    renderer.setRenderTarget(prevTarget);
+    renderer.setClearAlpha(prevClear);
+    k.sc.remove(m.root);
+    disposeObject(m.root);
+    // Bild umdrehen (WebGL liest von unten nach oben) und verkleinern (glatte Kanten)
+    const bg = k.big.getContext("2d");
+    const img = bg.createImageData(S, S);
+    for (let y = 0; y < S; y++) img.data.set(k.buf.subarray((S - 1 - y) * S * 4, (S - y) * S * 4), y * S * 4);
+    bg.putImageData(img, 0, 0);
+    const g2 = k.canvas.getContext("2d");
+    g2.clearRect(0, 0, size, size);
+    g2.drawImage(k.big, 0, 0, size, size);
+    const url = k.canvas.toDataURL("image/png");
+    previewCache.set(key, url);
+    return url;
+  }
+
   // Für Tests und Vorschaubilder: Kamera auf einen Punkt richten
   function lookAt(pos, target) {
     camera.position.set(...pos);
@@ -2545,5 +2477,5 @@ const View = (() => {
     controls.update();
   }
 
-  return { init, buildMap, removeObstacle, render, resetCamera, setMenuMode, lookAt };
+  return { init, buildMap, removeObstacle, render, resetCamera, setMenuMode, lookAt, towerPreview };
 })();
