@@ -116,15 +116,18 @@ for (const curve of WALK_CURVES) {
 
 // ---------- Gelände: große, weiche Hügel (nur Optik, Höhen in Feld-Einheiten) ----------
 // Der Tunnelberg ist Teil des Geländes; die Straße läuft darunter hindurch.
-const HILL = { x: TUNNEL.col + 0.5, y: (TUNNEL.rowFrom + TUNNEL.rowTo + 1) / 2, rx: 3.6, ry: 3.9, h: 0.95 };
+const HILL = { x: TUNNEL.col + 0.5, y: (TUNNEL.rowFrom + TUNNEL.rowTo + 1) / 2, rx: 3.6, ry: 3.3, h: 0.95 };
 
 const smooth01 = (t) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
 
 function hillHeight(x, y) {
-  const u = Math.hypot((x - HILL.x) / HILL.rx, (y - HILL.y) / HILL.ry);
-  if (u >= 1) return 0;
-  // weiche, runde Kuppel
-  return HILL.h * Math.cos((u * Math.PI) / 2) ** 1.5;
+  const ux = Math.abs(x - HILL.x) / HILL.rx;
+  const uy = Math.abs(y - HILL.y) / HILL.ry;
+  if (ux >= 1 || uy >= 1) return 0;
+  // zur Seite hin sanft und rund, zu den Tunnelportalen hin eine kurze, steilere Flanke
+  const side = Math.cos((ux * Math.PI) / 2) ** 1.4;
+  const ends = (1 - uy ** 3) ** 0.6;
+  return HILL.h * side * ends;
 }
 
 // Hügel: [x, y, Breite, Höhe]. Die Straße führt über die ersten beiden.
@@ -208,7 +211,8 @@ function buildTerrain() {
     return out.map((p, k) => ({ ...p, h: h[k] }));
   };
   // Linie in ein Raster stempeln: innerhalb halfW genau auf Profilhöhe, danach weicher Übergang
-  const stamp = (G, prof, halfW, blend, skip, weights) => {
+  // protect(x, y): Rasterpunkte, die nicht verändert werden dürfen (der Berg hinter den Tunnelportalen)
+  const stamp = (G, prof, halfW, blend, skip, weights, protect) => {
     const best = new Float32Array(W * D).fill(1e9);
     const target = new Float32Array(W * D);
     const R = halfW + blend;
@@ -231,6 +235,10 @@ function buildTerrain() {
     }
     for (let k = 0; k < W * D; k++) {
       if (best[k] > R) continue;
+      if (protect) {
+        const [x, y] = pos(k % W, Math.floor(k / W));
+        if (protect(x, y)) continue;
+      }
       const w = 1 - smooth01((best[k] - halfW) / blend);
       G[k] = G[k] * (1 - w) + target[k] * w;
       if (weights) weights[k] = Math.max(weights[k], w);
@@ -242,7 +250,8 @@ function buildTerrain() {
     const tilePts = pts.map((p) => ({ x: p.x / TILE, y: p.y / TILE }));
     const prof = profile(tilePts, B, 4, 6);
     stamp(B, prof, 0.55, 0.7, null, null);
-    stamp(H, prof, 0.55, 1.1, inTunnel, roadW);
+    // vor den Portalen wird ein Einschnitt gegraben, hinter den Portalen bleibt der Berg geschlossen
+    stamp(H, prof, 0.55, 1.1, inTunnel, roadW, (x, y) => y > TUNNEL_RECT.y0 / TILE && y < TUNNEL_RECT.y1 / TILE && Math.abs(x - HILL.x) < HILL.rx);
   }
   // Gehwege folgen dem Boden (auch über den Tunnelberg), kreuzen die Straße auf gleicher Höhe
   const walkGrid = Float32Array.from(H);

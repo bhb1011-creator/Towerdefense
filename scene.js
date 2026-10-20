@@ -1549,15 +1549,17 @@ const View = (() => {
       vortexTex.center.set(0.5, 0.5);
     }
     // Portalwand mit Bogenöffnung (wird in den Hang gesetzt)
+    // breite Portalwand mit abgeschrägten Schultern, verdeckt den Übergang vom Einschnitt zum Berg
     const wallGeo = G("portalWall", () => {
       const sh = new THREE.Shape();
-      sh.moveTo(-0.95, 0);
-      sh.lineTo(0.95, 0);
-      sh.lineTo(0.95, 0.62);
-      sh.quadraticCurveTo(0.95, 0.95, 0.6, 0.98);
-      sh.lineTo(-0.6, 0.98);
-      sh.quadraticCurveTo(-0.95, 0.95, -0.95, 0.62);
-      sh.lineTo(-0.95, 0);
+      sh.moveTo(-1.55, 0);
+      sh.lineTo(1.55, 0);
+      sh.lineTo(1.55, 0.42);
+      sh.quadraticCurveTo(1.2, 0.52, 0.88, 0.8);
+      sh.quadraticCurveTo(0.6, 1.0, 0, 1.0);
+      sh.quadraticCurveTo(-0.6, 1.0, -0.88, 0.8);
+      sh.quadraticCurveTo(-1.2, 0.52, -1.55, 0.42);
+      sh.lineTo(-1.55, 0);
       const hole = new THREE.Path();
       hole.moveTo(-0.5, 0);
       hole.lineTo(-0.5, 0.3);
@@ -1572,7 +1574,7 @@ const View = (() => {
       portal.position.set(x, PAD_TOP, z);
       // Wand steht im Hang, Öffnung zeigt nach außen
       portal.rotation.y = dir > 0 ? 0 : Math.PI;
-      portal.scale.setScalar(0.85);
+      portal.scale.setScalar(0.8);
       const wall = mesh(wallGeo, chrome("#6a5c9a", 0.25, 0.6), { cast: true, receive: true });
       wall.position.z = -0.2;
       const arch = mesh(G("portalArch", () => new THREE.TorusGeometry(0.53, 0.05, 10, 40, Math.PI)), chrome("#f4f6ff", 0.08), { cast: true });
