@@ -306,7 +306,7 @@ function damageEnemy(e, amount, type, tower, opts = {}) {
       if (tower) tower.stats.kills++;
       Achievements.add("kills", 1);
     }
-    state.events.push({ type: "pop", x: e.x, y: e.y, color, level: e.level + dealt, dead: e.dead });
+    state.events.push({ type: "pop", x: e.x, y: e.y, color, level: e.level + dealt, dead: e.dead, kind: e.props.blast ? "beetle" : "alien" });
   } else {
     dealt = Math.min(amt, e.hp);
     e.hp -= amt;
@@ -923,7 +923,7 @@ function update(dt) {
       const spec = state.spawnQueue.shift();
       const e = createEnemy(spec, spec.path);
       state.enemies.push(e);
-      if (isBoss(e)) state.events.push({ type: "bossSpawn" });
+      if (isBoss(e)) state.events.push({ type: "bossSpawn", kind: e.kind });
     }
   }
 
@@ -975,7 +975,9 @@ function update(dt) {
         move = 0;
       }
     }
+    const wasInTunnel = e.inTunnel;
     e.inTunnel = e.x > TUNNEL_RECT.x0 && e.x < TUNNEL_RECT.x1 && e.y > TUNNEL_RECT.y0 && e.y < TUNNEL_RECT.y1;
+    if (e.inTunnel && !wasInTunnel) state.events.push({ type: "tunnel" });
     if (e.target >= pts.length) {
       e.dead = true;
       const loss = e.kind === "drone" ? e.level : HEAVY[e.kind].lifeDamage;

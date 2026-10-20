@@ -5,20 +5,21 @@
 
 const Sound = (() => {
   let ctx = null;
-  let musicGain, sfxGain, musicBus, reverb, delay, delayFeedback, compressor, duck;
+  let musicGain, sfxGain, musicBus, reverb, delay, delayFeedback, compressor, duck, sfxVerb;
   let settings = { music: true, musicVol: 0.5, sfx: true, sfxVol: 0.6 };
   let noiseBuffer = null;
   const lastPlayed = {};
 
   // ---------- Grundaufbau ----------
-  function init() {
+  // offline: optionaler eigener Audio-Kontext (z. B. für Hörproben ohne Musik)
+  function init(offline) {
     if (ctx) {
       if (ctx.state === "suspended") ctx.resume();
       return;
     }
     const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return;
-    ctx = new AC();
+    if (!AC && !offline) return;
+    ctx = offline || new AC();
 
     compressor = ctx.createDynamicsCompressor();
     compressor.threshold.value = -16;
@@ -29,6 +30,13 @@ const Sound = (() => {
     musicGain.connect(compressor);
     sfxGain = ctx.createGain();
     sfxGain.connect(compressor);
+    // eigener Hall für die Effekte (Aliens klingen räumlich, auch wenn die Musik aus ist)
+    sfxVerb = ctx.createConvolver();
+    sfxVerb.buffer = impulseResponse(1.8, 2.6);
+    const sfxVerbGain = ctx.createGain();
+    sfxVerbGain.gain.value = 0.5;
+    sfxVerb.connect(sfxVerbGain);
+    sfxVerbGain.connect(sfxGain);
 
     // "Pumpen" der Musik im Takt der Bassdrum (Sidechain-Effekt)
     duck = ctx.createGain();
@@ -61,7 +69,7 @@ const Sound = (() => {
     for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
 
     applySettings(settings);
-    startMusic();
+    if (!offline) startMusic();
   }
 
   function impulseResponse(seconds, decay) {
@@ -260,9 +268,138 @@ const Sound = (() => {
     noise(t, dur, gain, musicBus, "highpass", 7500);
   }
 
+  // ---------- Alien-Stimmen ----------
+  // Formant-Synthese: eine raue Quelle (Sägezahn + Unterton + Atem) wird durch drei
+  // Bandpässe geschickt, die wie Vokale klingen. Wandernde Formanten = "Sprechen", Verzerrung = Knurren.
+  const VOWELS = {
+    a: [800, 1150, 2900], o: [450, 800, 2830], u: [325, 700, 2700], e: [400, 1600, 2700], i: [300, 2200, 3000], x: [600, 1900, 3600],
+  };
+  const shaperCurves = new Map();
+  function shaperCurve(amount) {
+    const key = Math.round(amount * 10);
+    if (!shaperCurves.has(key)) {
+      const n = 1024;
+      const c = new Float32Array(n);
+      const k = amount * 60 + 1;
+      for (let i = 0; i < n; i++) {
+        const x = (i / (n - 1)) * 2 - 1;
+        c[i] = ((1 + k) * x) / (1 + k * Math.abs(x));
+      }
+      shaperCurves.set(key, c);
+    }
+    return shaperCurves.get(key);
+  }
+
+  // pitch: Liste von Tonhöhen über die Dauer, vowels: Vokalfolge, shift: Formanten verschieben (klein = höher)
+  function creature(t, { pitch, dur, vowels, shift = 1, gain = 0.05, rough = 0.3, vib = 6, vibDepth = 0.03, breath = 0.2, drive = 0.3, ring = 0, verb = 0.3, q = 7 }) {
+    const end = t + dur;
+    const src = ctx.createGain();
+    const osc = ctx.createOscillator();
+    osc.type = "sawtooth";
+    const sub = ctx.createOscillator();
+    sub.type = "square";
+    const pts = pitch.length > 1 ? pitch : [pitch[0], pitch[0]];
+    osc.frequency.setValueAtTime(pts[0], t);
+    sub.frequency.setValueAtTime(pts[0] * 0.5, t);
+    pts.forEach((f, i) => {
+      if (i === 0) return;
+      const at = t + (dur * i) / (pts.length - 1);
+      osc.frequency.exponentialRampToValueAtTime(f, at);
+      sub.frequency.exponentialRampToValueAtTime(f * 0.5 * 1.01, at);
+    });
+    // Vibrato bzw. Zittern
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = vib;
+    const lfoGain = ctx.createGain();
+    lfoGain.gain.value = pts[0] * vibDepth;
+    lfo.connect(lfoGain);
+    lfoGain.connect(osc.frequency);
+    lfoGain.connect(sub.frequency);
+    const subGain = ctx.createGain();
+    subGain.gain.value = rough;
+    osc.connect(src);
+    sub.connect(subGain);
+    subGain.connect(src);
+    // metallischer Ringmodulator für das Fremdartige
+    let mix = src;
+    if (ring > 0) {
+      const rm = ctx.createGain();
+      rm.gain.value = 1 - ring;
+      const rmOsc = ctx.createOscillator();
+      rmOsc.frequency.value = pts[0] * 1.48;
+      const rmDepth = ctx.createGain();
+      rmDepth.gain.value = ring;
+      rmOsc.connect(rmDepth);
+      rmDepth.connect(rm.gain);
+      src.connect(rm);
+      rmOsc.start(t);
+      rmOsc.stop(end + 0.1);
+      mix = rm;
+    }
+    const shaper = ctx.createWaveShaper();
+    shaper.curve = shaperCurve(drive);
+    mix.connect(shaper);
+    // Atemgeräusch
+    const nsrc = ctx.createBufferSource();
+    nsrc.buffer = noiseBuffer;
+    const ng = ctx.createGain();
+    ng.gain.value = breath;
+    nsrc.connect(ng);
+    // Formantfilter
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0.0001, t);
+    env.gain.exponentialRampToValueAtTime(gain, t + Math.min(0.04, dur * 0.2));
+    env.gain.setValueAtTime(gain, t + dur * 0.7);
+    env.gain.exponentialRampToValueAtTime(0.0001, end);
+    const vs = vowels.map((v) => VOWELS[v]);
+    [0, 1, 2].forEach((k) => {
+      const bp = ctx.createBiquadFilter();
+      bp.type = "bandpass";
+      bp.Q.value = q * (k === 0 ? 0.7 : 1);
+      vs.forEach((v, i) => {
+        const at = t + (dur * i) / Math.max(1, vs.length - 1);
+        if (i === 0) bp.frequency.setValueAtTime(v[k] / shift, at);
+        else bp.frequency.linearRampToValueAtTime(v[k] / shift, at);
+      });
+      const fg = ctx.createGain();
+      fg.gain.value = [1, 0.7, 0.35][k];
+      shaper.connect(bp);
+      ng.connect(bp);
+      bp.connect(fg);
+      fg.connect(env);
+    });
+    env.connect(sfxGain);
+    if (verb > 0) {
+      const vg = ctx.createGain();
+      vg.gain.value = verb;
+      env.connect(vg);
+      vg.connect(sfxVerb);
+    }
+    for (const o of [osc, sub, lfo]) {
+      o.start(t);
+      o.stop(end + 0.1);
+    }
+    nsrc.start(t, Math.random() * 0.5);
+    nsrc.stop(end + 0.1);
+  }
+
+  // dumpfer Herzschlag (Mutterschiff)
+  function thump(t, gain) {
+    voice("sine", 62, t, 0.18, gain, sfxGain, { attack: 0.005, release: 0.25 }).frequency.exponentialRampToValueAtTime(34, t + 0.2);
+  }
+
+  // nasses Schmatzen
+  function squelch(t, gain) {
+    noise(t, 0.22, gain, [sfxGain, sfxVerb], "bandpass", 380, 1400, 6);
+    noise(t + 0.08, 0.18, gain * 0.7, sfxGain, "bandpass", 900, 260, 8);
+  }
+
   // ---------- Soundeffekte ----------
   // Mindestabstand zwischen gleichen Effekten (damit es bei vielen Gegnern nicht zu laut wird)
-  const LIMITS = { laser: 0.05, beam: 0.12, plasma: 0.08, cryo: 0.15, mortar: 0.1, boom: 0.07, pop: 0.035, deflect: 0.12, ship: 0.2, leak: 0.25, regen: 0.3, shatter: 0.1 };
+  const LIMITS = {
+    laser: 0.05, beam: 0.12, plasma: 0.08, cryo: 0.15, mortar: 0.1, boom: 0.07, pop: 0.035, deflect: 0.12, ship: 0.2, leak: 0.25, regen: 0.3, shatter: 0.1,
+    alienDie: 0.06, chitter: 0.5, tunnel: 0.35, bruteDie: 0.15, roar: 2, bossDie: 1, hiveSpawn: 3, hiveBurst: 2, ability: 0.5,
+  };
   function allowed(name) {
     const now = ctx.currentTime;
     const gap = LIMITS[name] || 0.03;
@@ -273,7 +410,7 @@ const Sound = (() => {
 
   function play(name, opts = {}) {
     if (!ctx || !settings.sfx || !allowed(name)) return;
-    const t = ctx.currentTime + 0.005;
+    const t = ctx.currentTime + 0.005 + (opts.delay || 0);
     const out = sfxGain;
     switch (name) {
       case "laser":
@@ -361,6 +498,65 @@ const Sound = (() => {
         noise(t, 1.4, 0.08, out, "lowpass", 300, 1200, 3);
         voice("sawtooth", 55, t, 1.2, 0.08, out, { attack: 0.3, release: 0.5, filter: { freq: 400 } });
         break;
+      case "alienDie": {
+        // kurzer Quiek-Schrei, kleinere Aliens höher; Spezialaliens klingen anders
+        const lv = opts.level || 1;
+        const f = 330 + lv * 70 + Math.random() * 60;
+        if (opts.kind === "beetle") creature(t, { pitch: [f * 0.6, f * 0.3], dur: 0.16, vowels: ["x", "o"], shift: 0.9, gain: 0.03, rough: 0.7, drive: 0.6, vib: 40, vibDepth: 0.08, breath: 0.4, verb: 0.15 });
+        else creature(t, { pitch: [f, f * 1.25, f * 0.5], dur: 0.2 + Math.random() * 0.06, vowels: ["i", "a", "u"], shift: 0.62, gain: 0.04, rough: 0.15, vib: 28, vibDepth: 0.05, breath: 0.15, drive: 0.25, ring: 0.3, verb: 0.2 });
+        break;
+      }
+      case "chitter": {
+        // Schwarm-Geklacker: viele kurze Klicklaute
+        const n = opts.count || 6;
+        for (let i = 0; i < n; i++) {
+          const f = 900 + Math.random() * 900;
+          creature(t + i * (0.05 + Math.random() * 0.05), { pitch: [f, f * 0.8], dur: 0.04 + Math.random() * 0.03, vowels: ["i", "x"], shift: 0.5, gain: 0.018, rough: 0.1, vib: 60, vibDepth: 0.1, breath: 0.5, drive: 0.4, verb: 0.35 });
+        }
+        break;
+      }
+      case "tunnel":
+        // Ansaug-Geräusch am Tunnelportal
+        noise(t, 0.6, 0.05, [out, sfxVerb], "bandpass", 300, 3200, 3);
+        voice("sine", 180, t, 0.5, 0.025, out, { attack: 0.05, release: 0.2 }).frequency.exponentialRampToValueAtTime(900, t + 0.5);
+        break;
+      case "bruteDie":
+        creature(t, { pitch: [150, 110, 55], dur: 0.8, vowels: ["a", "o", "u"], shift: 1.25, gain: 0.07, rough: 0.8, vib: 9, vibDepth: 0.05, breath: 0.35, drive: 0.75, verb: 0.4 });
+        noise(t, 0.5, 0.08, out, "lowpass", 900, 120);
+        break;
+      case "roar":
+        // Omega-Jäger: tiefes Brüllen mit Zischen und schrillem Kreischen darüber
+        creature(t, { pitch: [80, 135, 120, 70], dur: 2.3, vowels: ["u", "o", "a", "a", "o"], shift: 1.35, gain: 0.11, rough: 0.9, vib: 7, vibDepth: 0.07, breath: 0.6, drive: 0.85, verb: 0.6, q: 5 });
+        creature(t + 0.25, { pitch: [520, 880, 760, 430], dur: 1.8, vowels: ["e", "i", "e", "x"], shift: 1.0, gain: 0.035, rough: 0.2, vib: 13, vibDepth: 0.04, breath: 0.3, drive: 0.5, ring: 0.4, verb: 0.6 });
+        noise(t + 1.9, 0.9, 0.05, [out, sfxVerb], "highpass", 3200, 5200);
+        break;
+      case "bossDie":
+        creature(t, { pitch: [760, 900, 300, 90], dur: 1.6, vowels: ["i", "e", "a", "o", "u"], shift: 1.05, gain: 0.09, rough: 0.6, vib: 11, vibDepth: 0.06, breath: 0.5, drive: 0.8, ring: 0.25, verb: 0.7, q: 6 });
+        noise(t, 1.2, 0.12, out, "lowpass", 1600, 90);
+        break;
+      case "hiveSpawn": {
+        // Mutterschiff: dröhnendes Summen mit Herzschlag und Schmatzen
+        voice("sawtooth", 41, t, 3.2, 0.06, out, { attack: 0.8, release: 1.5, filter: { freq: 180, to: 700 } });
+        voice("sawtooth", 41.6, t, 3.2, 0.06, out, { attack: 0.8, release: 1.5, filter: { freq: 220, to: 600 } });
+        for (let i = 0; i < 4; i++) {
+          thump(t + 0.4 + i * 0.75, 0.16);
+          thump(t + 0.62 + i * 0.75, 0.1);
+        }
+        squelch(t + 1.1, 0.06);
+        squelch(t + 2.3, 0.05);
+        creature(t + 1.4, { pitch: [60, 90, 50], dur: 2.2, vowels: ["u", "o", "u"], shift: 1.5, gain: 0.07, rough: 1, vib: 4, vibDepth: 0.08, breath: 0.4, drive: 0.9, verb: 0.8, q: 4 });
+        break;
+      }
+      case "hiveBurst":
+        squelch(t, 0.12);
+        squelch(t + 0.15, 0.1);
+        noise(t, 1.4, 0.14, out, "lowpass", 1400, 70);
+        creature(t + 0.2, { pitch: [300, 520, 140], dur: 1.8, vowels: ["a", "i", "o", "u"], shift: 1.2, gain: 0.09, rough: 0.9, vib: 8, vibDepth: 0.07, breath: 0.5, drive: 0.85, ring: 0.3, verb: 0.8 });
+        break;
+      case "ability":
+        [60, 67, 72, 79].forEach((n, i) => voice("sawtooth", midi(n), t + i * 0.04, 0.35, 0.03, [out, delay], { release: 0.4, filter: { freq: 3000, to: 900 } }));
+        noise(t, 0.6, 0.05, out, "bandpass", 600, 4000, 2);
+        break;
       case "leak":
         voice("square", 120, t, 0.15, 0.04, out, { release: 0.1, filter: { freq: 600 } });
         break;
@@ -389,7 +585,15 @@ const Sound = (() => {
     if (!ctx) return;
     for (const ev of events) {
       if (ev.type === "shoot") play(ev.tower === "laser" ? (ev.beam ? "beam" : "laser") : ev.tower);
-      else if (ev.type === "pop") play("pop", ev);
+      else if (ev.type === "pop") play(ev.dead ? "alienDie" : "pop", ev);
+      else if (ev.type === "heavyDeath") {
+        play("heavyDeath", ev);
+        play(ev.kind === "tank" ? "bruteDie" : ev.kind === "bossA" ? "bossDie" : "hiveBurst", ev);
+      } else if (ev.type === "bossSpawn") play(ev.kind === "bossB" ? "hiveSpawn" : "roar", ev);
+      else if (ev.type === "waveStart" || ev.type === "bossWave") {
+        play(ev.type, ev);
+        play("chitter", { count: 7 });
+      }
       else if (ev.type === "boom") play("boom", ev);
       else play(ev.type, ev);
     }
