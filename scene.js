@@ -803,14 +803,18 @@ const View = (() => {
     }));
     const top = new THREE.Group();
     top.position.set(lean, h, 0);
+    // alle Blätter einer Palme zu einem Mesh zusammenfassen (weniger Zeichenaufrufe)
     const n = 8;
+    const leaves = [];
     for (let i = 0; i < n; i++) {
-      const leaf = mesh(leafGeo, leafMat, { cast: true });
-      leaf.rotation.y = (i / n) * Math.PI * 2 + rng() * 0.3;
-      leaf.rotation.z = 0.15 + rng() * 0.25;
-      leaf.scale.setScalar((h / 3) * (0.85 + rng() * 0.3));
-      top.add(leaf);
+      const m = new THREE.Matrix4().compose(
+        new THREE.Vector3(),
+        new THREE.Quaternion().setFromEuler(new THREE.Euler(0, (i / n) * Math.PI * 2 + rng() * 0.3, 0.15 + rng() * 0.25, "YZX")),
+        new THREE.Vector3().setScalar((h / 3) * (0.85 + rng() * 0.3))
+      );
+      leaves.push(leafGeo.clone().applyMatrix4(m));
     }
+    top.add(mesh(THREE.BufferGeometryUtils.mergeBufferGeometries(leaves), leafMat, { cast: true }));
     g.add(top);
     const sway = rng() * 10;
     animated.push({ static: isStatic, fn: (t) => { top.rotation.z = Math.sin(t * 0.7 + sway) * 0.04; } });
@@ -2430,5 +2434,5 @@ const View = (() => {
     controls.update();
   }
 
-  return { init, buildMap, removeObstacle, render, resetCamera, setMenuMode, lookAt, towerPreview, debugMood: (force) => { if (force) moodT = state.wave; return { moodT, calls: renderer.info.render.calls, tris: renderer.info.render.triangles }; } };
+  return { init, buildMap, removeObstacle, render, resetCamera, setMenuMode, lookAt, towerPreview, debugTop: () => { const list = []; scene.traverse((o) => { if (o.isMesh && o.visible) { const g = o.geometry; list.push([Math.round(((g.index ? g.index.count : g.attributes.position.count) / 3) * (o.count || 1)), g.type, o.parent && o.parent.type]); } }); return list.sort((a, b) => b[0] - a[0]).slice(0, 15); }, debugStats: () => { let meshes = 0; let tris = 0; scene.traverse((o) => { if ((o.isMesh || o.isPoints || o.isLine || o.isSprite) && o.visible) { meshes++; const g = o.geometry; if (g) tris += ((g.index ? g.index.count : g.attributes.position.count) / 3) * (o.count || 1); } }); return { meshes, tris: Math.round(tris) }; }, debugMood: (force) => { if (force) moodT = state.wave; return { moodT, calls: renderer.info.render.calls, tris: renderer.info.render.triangles }; } };
 })();

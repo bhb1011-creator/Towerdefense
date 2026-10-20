@@ -15,17 +15,23 @@ const Aliens = (() => {
     return g;
   }
 
-  function limb(a, b, r, seg = 10) {
+  // Segmentzahl nach Größe: kleine Teile brauchen weniger Dreiecke
+  const autoSeg = (r) => (r < 0.02 ? 5 : r < 0.05 ? 7 : r < 0.1 ? 9 : 12);
+
+  function limb(a, b, r, seg = autoSeg(r)) {
     const A = V(...a);
     const B = V(...b);
     const d = B.clone().sub(A);
     const len = Math.max(0.001, d.length());
-    const g = new THREE.CapsuleGeometry(r, len, 3, seg);
+    const g = new THREE.CapsuleGeometry(r, len, 2, seg);
     g.applyMatrix4(new THREE.Matrix4().compose(A.clone().add(B).multiplyScalar(0.5), new THREE.Quaternion().setFromUnitVectors(UP, d.normalize()), V(1, 1, 1)));
     return g;
   }
 
-  const ball = (p, r, s = [1, 1, 1], seg = 16, rot = [0, 0, 0]) => xf(new THREE.SphereGeometry(r, seg, Math.max(6, Math.round(seg * 0.7))), { p, s, r: rot });
+  const ball = (p, r, s = [1, 1, 1], seg = 0, rot = [0, 0, 0]) => {
+    const n = Math.min(seg || 99, autoSeg(r) + 2);
+    return xf(new THREE.SphereGeometry(r, n, Math.max(5, Math.round(n * 0.65))), { p, s, r: rot });
+  };
   const cone = (p, r, h, rot, seg = 6) => xf(new THREE.ConeGeometry(r, h, seg), { p, r: rot });
 
   function merge(list) {
@@ -93,7 +99,7 @@ const Aliens = (() => {
 
   // ---------- Start-Alien (Stufe 1–5, gleiche Form, Farbe je Stufe) ----------
   // Bogen (halber Ring) quer über die Brust, Mitte zeigt nach vorne (+X)
-  const ribArc = (p, r, sz, sx) => xf(new THREE.TorusGeometry(r, 0.011, 6, 18, Math.PI), { p, r: [Math.PI / 2, 0, -Math.PI / 2], s: [sz, sx, 1] });
+  const ribArc = (p, r, sz, sx) => xf(new THREE.TorusGeometry(r, 0.011, 4, 12, Math.PI), { p, r: [Math.PI / 2, 0, -Math.PI / 2], s: [sz, sx, 1] });
 
   function starterGeo(level) {
     return cachedGeo(`starterBody${level}`, () => {
@@ -147,7 +153,7 @@ const Aliens = (() => {
     // leuchtende Zeichnung: Pupillen, Kiemen am Hals, Linie über den Schädel, Punkte am Rücken (Anzahl = Stufe)
     body.add(mesh(cachedGeo(`starterGlow${level}`, () => merge([
       ball([0.222, 1.068, 0.056], 0.014, [0.5, 1.7, 0.6]), ball([0.222, 1.068, -0.056], 0.014, [0.5, 1.7, 0.6]),
-      ...[0, 1, 2].flatMap((i) => [1, -1].map((s) => limb([0.07 + i * 0.012, 0.88 + i * 0.022, 0.035 * s], [0.1 + i * 0.012, 0.88 + i * 0.022, 0.028 * s], 0.006))),
+      ...[0, 1, 2].flatMap((i) => [1, -1].map((s) => limb([0.07 + i * 0.012, 0.88 + i * 0.022, 0.035 * s], [0.1 + i * 0.012, 0.88 + i * 0.022, 0.028 * s], 0.006, 4))),
       limb([-0.2, 1.22, 0.03], [0.08, 1.2, 0.035], 0.006), limb([-0.2, 1.22, -0.03], [0.08, 1.2, -0.035], 0.006),
       ball([0.16, 0.8, 0], 0.022, [0.6, 1, 1]),
       ...Array.from({ length: level }, (_, i) => ball([-0.098, 0.84 - i * 0.065, 0], 0.02)),
@@ -161,10 +167,8 @@ const Aliens = (() => {
         ball([0.01, -0.2, 0.03 * s], 0.03),
         limb([0.01, -0.2, 0.03 * s], [0.13, -0.33, 0.02 * s], 0.025),
         ball([0.13, -0.33, 0.02 * s], 0.03, [1.2, 0.8, 1]),
-        ...[-1, 0, 1].flatMap((k) => [
-          limb([0.14, -0.34, (0.02 + k * 0.018) * s], [0.21, -0.37, (0.025 + k * 0.03) * s], 0.009),
-          limb([0.21, -0.37, (0.025 + k * 0.03) * s], [0.25, -0.42, (0.03 + k * 0.03) * s], 0.007),
-        ]),
+        // drei lange Krallenfinger
+        ...[-1, 0, 1].map((k) => limb([0.14, -0.34, (0.02 + k * 0.018) * s], [0.25, -0.41, (0.03 + k * 0.03) * s], 0.009, 4)),
       ])), skin));
       arms.push(arm);
     }
@@ -178,7 +182,7 @@ const Aliens = (() => {
         ball([0, 0, 0], 0.035),
         limb([0, 0, 0], [-0.09, -0.17, 0], 0.032),
         limb([-0.09, -0.17, 0], [-0.05, -0.29, 0], 0.024),
-        ...[-1, 0, 1].map((k) => limb([-0.05, -0.29, 0], [0.04, -0.3, k * 0.035], 0.012)),
+        ...[-1, 0, 1].map((k) => limb([-0.05, -0.29, 0], [0.04, -0.3, k * 0.035], 0.012, 4)),
       ])), skin));
       legs.push({ hip, knee });
     }
@@ -708,7 +712,7 @@ const Aliens = (() => {
         const phi = (i / 8) * Math.PI * 2 + Math.PI / 8;
         const pts = [];
         for (let k = 0; k <= 8; k++) pts.push(hiveSurface(0.25 + k * 0.27, phi + Math.sin(k * 0.7) * 0.08, 1.05 + Math.sin((k / 8) * Math.PI) * 0.07));
-        parts.push(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 40, 0.07, 8));
+        parts.push(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 28, 0.07, 6));
         // kleine Dornen entlang der Rippe
         for (let k = 2; k <= 6; k += 2) {
           const p0 = hiveSurface(0.25 + k * 0.27, phi, 1.12);
@@ -783,15 +787,15 @@ const Aliens = (() => {
     }
     // Tentakel mit leuchtenden Spitzen
     const tentacles = [];
-    for (let i = 0; i < 10; i++) {
-      const a = (i / 10) * Math.PI * 2;
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
       let parent = pivot(body, [Math.cos(a) * 0.85, -0.55, Math.sin(a) * 0.85]);
       parent.rotation.set(Math.sin(a) * 0.35, 0, -Math.cos(a) * 0.35);
       const chain = [];
-      for (let k = 0; k < 9; k++) {
-        parent.add(mesh(cachedGeo(`tent${k}`, () => merge([limb([0, 0, 0], [0, -0.2, 0], 0.075 * (1 - k * 0.1) + 0.008), ball([0, -0.1, 0.05 * (1 - k * 0.1)], 0.02 * (1 - k * 0.08))])), skin));
+      for (let k = 0; k < 7; k++) {
+        parent.add(mesh(cachedGeo(`tent${k}`, () => merge([limb([0, 0, 0], [0, -0.26, 0], 0.075 * (1 - k * 0.12) + 0.008), ball([0, -0.13, 0.05 * (1 - k * 0.12)], 0.02 * (1 - k * 0.1))])), skin));
         chain.push(parent);
-        parent = pivot(parent, [0, -0.2, 0]);
+        parent = pivot(parent, [0, -0.26, 0]);
       }
       parent.add(mesh(cachedGeo("tentTip", () => ball([0, -0.03, 0], 0.04)), glowMat("#29e6ff", 3)));
       tentacles.push({ chain, a });

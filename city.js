@@ -196,7 +196,7 @@ const City = (() => {
     roofs.build(group);
     for (const s of signs) group.add(s);
     // blinkende Lichter auf den Dächern
-    const lights = new THREE.InstancedMesh(H.G("cityRoofLight", () => new THREE.SphereGeometry(0.07, 8, 6)), H.neon("#ff2a4a", 3), roofLights.length);
+    const lights = new THREE.InstancedMesh(H.G("cityRoofLight", () => new THREE.SphereGeometry(0.07, 6, 4)), H.neon("#ff2a4a", 3), roofLights.length);
     roofLights.forEach((p, i) => lights.setMatrixAt(i, new THREE.Matrix4().makeTranslation(p.x, p.y, p.z)));
     lights.frustumCulled = false;
     group.add(lights);
@@ -399,15 +399,15 @@ const City = (() => {
     const pos = [];
     for (const s of segs) {
       if (s.link) continue;
-      for (let d = s.a + 1; d < s.b; d += 4) {
+      for (let d = s.a + 1; d < s.b; d += 7) {
         const off = STREET_W / 2 + WALK_W * 0.6;
         if (s.axis === "x") pos.push([d, s.c - off], [d + 2, s.c + off]);
         else pos.push([s.c - off, d], [s.c + off, d + 2]);
       }
     }
     const y = H.GROUND_Y;
-    const poles = new THREE.InstancedMesh(H.G("cityLampPole", () => new THREE.CylinderGeometry(0.03, 0.04, 1.3, 6)), H.metal("#c0c8e8", 0.3, 1), pos.length);
-    const heads = new THREE.InstancedMesh(H.G("cityLampHead", () => new THREE.SphereGeometry(0.09, 8, 6)), H.neon("#ffd0a0", 2.4), pos.length);
+    const poles = new THREE.InstancedMesh(H.G("cityLampPole", () => new THREE.CylinderGeometry(0.03, 0.04, 1.3, 5, 1, true)), H.metal("#c0c8e8", 0.3, 1), pos.length);
+    const heads = new THREE.InstancedMesh(H.G("cityLampHead", () => new THREE.SphereGeometry(0.09, 6, 4)), H.neon("#ffd0a0", 2.4), pos.length);
     pos.forEach(([x, z], i) => {
       poles.setMatrixAt(i, new THREE.Matrix4().makeTranslation(x, y + 0.65, z));
       heads.setMatrixAt(i, new THREE.Matrix4().makeTranslation(x, y + 1.32, z));
