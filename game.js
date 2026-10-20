@@ -3,7 +3,7 @@
 // Spielablauf und Oberfläche. Die Spieldaten stehen in data.js,
 // die 3D-Darstellung in scene.js und Musik/Sound in audio.js.
 
-const SAVE_KEY = "neoCityDefense.save.v2";
+const SAVE_KEY = "neoCityDefense.save.v3";
 const SETTINGS_KEY = "neoCityDefense.settings.v1";
 
 const ui = {
@@ -67,9 +67,13 @@ function saveSettings() {
 }
 
 // ---------- Karte ----------
-// grid[row][col]: "pad" | "path" | "pool" | "gate" | "kiosk" | "crate"
+// grid[row][col]: "pad" | "path" | "tunnel" | "pool" | "plaza" | "gate" | Gebäude (Schlüssel aus OBSTACLES)
 let grid;
 let variant; // Zufallswert je Feld für unterschiedliches Aussehen
+
+function inGrid(c, r) {
+  return c >= 0 && c < COLS && r >= 0 && r < ROWS;
+}
 
 function buildGrid() {
   const rng = mulberry32(MAP_SEED);
@@ -81,28 +85,40 @@ function buildGrid() {
   }
   for (const key of pathTiles) {
     const [c, r] = key.split(",").map(Number);
-    if (c >= 0 && c < COLS && r >= 0 && r < ROWS) grid[r][c] = "path";
+    if (inGrid(c, r)) grid[r][c] = tunnelTiles.has(key) ? "tunnel" : "path";
   }
   for (const pool of POOLS) for (const [c, r] of pool) grid[r][c] = "pool";
+  // Uferpromenade rund um die Seen
+  for (const pool of POOLS) {
+    for (const [c, r] of pool) {
+      for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+          if (inGrid(c + dc, r + dr) && grid[r + dr][c + dc] === "pad") grid[r + dr][c + dc] = "plaza";
+        }
+      }
+    }
+  }
   for (const [c, r] of GATE_TILES) grid[r][c] = "gate";
 
-  const nearPath = (c, r) => {
+  const near = (c, r, type) => {
     for (let dr = -1; dr <= 1; dr++) {
       for (let dc = -1; dc <= 1; dc++) {
-        if (pathTiles.has(`${c + dc},${r + dr}`)) return true;
+        if (inGrid(c + dc, r + dr) && grid[r + dr][c + dc] === type) return true;
       }
     }
     return false;
   };
+  // Gebäude: bevorzugt an der Promenade, selten direkt am Weg
   for (const [kind, def] of Object.entries(OBSTACLES)) {
     let placed = 0;
     let tries = 0;
-    while (placed < def.count && tries < 2000) {
+    while (placed < def.count && tries < 4000) {
       tries++;
       const c = Math.floor(rng() * COLS);
       const r = Math.floor(rng() * ROWS);
       if (grid[r][c] !== "pad") continue;
-      if (nearPath(c, r) && rng() < 0.7) continue; // Felder am Weg bleiben meistens frei
+      if ((near(c, r, "path") || near(c, r, "tunnel")) && rng() < 0.75) continue;
+      if (!near(c, r, "plaza") && rng() < 0.45) continue;
       grid[r][c] = kind;
       placed++;
     }
@@ -258,13 +274,13 @@ function spawnChildren(parent) {
     child.wait = i * (isBoss(child) ? 0.8 : 0.15);
     state.enemies.push(child);
   });
-  if (parent.kind === "bossB") showBanner("DAS MUTTERSCHIFF BRICHT AUF!", "4 Omega-Kolosse sind freigekommen!");
+  if (parent.kind === "bossB") showBanner("DAS MUTTERSCHIFF BRICHT AUF!", "4 Omega-Jäger sind freigekommen!");
 }
 
 // Schaden zufügen. Gibt den tatsächlich verursachten Schaden zurück.
 // opts: { pierceShield, heavyMult, camoBonus, mirrorMult }
 function damageEnemy(e, amount, type, tower, opts = {}) {
-  if (e.dead || amount <= 0) return 0;
+  if (e.dead || amount <= 0 || e.inTunnel) return 0;
   const immuneProp = DAMAGE_IMMUNITY[type];
   if (immuneProp && e.props[immuneProp] && !(type === "laser" && opts.pierceShield)) {
     if (Math.random() < 0.3) state.events.push({ type: "deflect", x: e.x, y: e.y });
@@ -391,16 +407,30 @@ function isUnlocked(typeKey) {
   return state.wave >= (TOWER_TYPES[typeKey].unlockWave || 0);
 }
 
+// Türme belegen 2×2 Felder; (col, row) ist das Feld oben links
 function towerAt(col, row) {
-  return state.towers.find((t) => t.col === col && t.row === row) || null;
+  return state.towers.find((t) => col >= t.col && col < t.col + TOWER_SIZE && row >= t.row && row < t.row + TOWER_SIZE) || null;
 }
 
 function canBuild(col, row) {
-  return col >= 0 && col < COLS && row >= 0 && row < ROWS && grid[row][col] === "pad" && !towerAt(col, row);
+  for (let r = row; r < row + TOWER_SIZE; r++) {
+    for (let c = col; c < col + TOWER_SIZE; c++) {
+      if (!inGrid(c, r) || grid[r][c] !== "pad" || towerAt(c, r)) return false;
+    }
+  }
+  return true;
+}
+
+// Der 2×2-Bauplatz, dessen Mitte am nächsten an einem Punkt (in Pixeln) liegt
+function buildAnchor(px, py) {
+  return {
+    col: Math.max(0, Math.min(COLS - TOWER_SIZE, Math.round(px / TILE) - 1)),
+    row: Math.max(0, Math.min(ROWS - TOWER_SIZE, Math.round(py / TILE) - 1)),
+  };
 }
 
 function defaultMortarAim() {
-  return { x: 11 * TILE + TILE / 2, y: 5 * TILE };
+  return { x: 12 * TILE + TILE / 2, y: 11 * TILE + TILE / 2 };
 }
 
 function createTower(typeKey, col, row) {
@@ -408,8 +438,8 @@ function createTower(typeKey, col, row) {
     id: nextId++,
     type: typeKey,
     col, row,
-    x: col * TILE + TILE / 2,
-    y: row * TILE + TILE / 2,
+    x: (col + TOWER_SIZE / 2) * TILE,
+    y: (row + TOWER_SIZE / 2) * TILE,
     levels: [0, 0, 0],
     cooldown: typeKey === "station" ? 2 : 0,
     invested: towerCost(typeKey),
@@ -495,7 +525,7 @@ function clearObstacle() {
   const cost = priceOf(def.clearCost);
   if (state.gold < cost) return;
   state.gold -= cost;
-  puff(s.col * TILE + TILE / 2, s.row * TILE + TILE / 2, kind === "kiosk" ? "#ff4fd8" : "#29e6ff", 18, 20);
+  puff(s.col * TILE + TILE / 2, s.row * TILE + TILE / 2, "#ff4fd8", 18, 20);
   grid[s.row][s.col] = "pad";
   state.cleared.push(`${s.col},${s.row}`);
   View.removeObstacle(s.col, s.row);
@@ -513,7 +543,7 @@ function canSee(t, s, e) {
 function pickTargets(t, s, count, range = s.range, needSight = true) {
   const list = [];
   for (const e of state.enemies) {
-    if (e.dead || e.wait > 0) continue;
+    if (e.dead || e.wait > 0 || e.inTunnel) continue;
     if (needSight && !canSee(t, s, e)) continue;
     if (!s.global && Math.hypot(e.x - t.x, e.y - t.y) > range + enemyRadius(e) * 0.5) continue;
     list.push(e);
@@ -529,7 +559,7 @@ function pickTargets(t, s, count, range = s.range, needSight = true) {
 function enemiesNear(x, y, radius, exclude) {
   const list = [];
   for (const e of state.enemies) {
-    if (e.dead || e === exclude) continue;
+    if (e.dead || e === exclude || e.inTunnel) continue;
     const d = Math.hypot(e.x - x, e.y - y);
     if (d <= radius + enemyRadius(e) * 0.6) list.push([d, e]);
   }
@@ -840,7 +870,7 @@ function endGame(won) {
   state.buildMode = false;
   writeStorage(SAVE_KEY, null);
   if (won) {
-    setInfo(`🏆 Gewonnen auf „${state.diff.name}“! Du hast alle ${FINAL_WAVE} Wellen und das Hyperion-Mutterschiff besiegt. <button id="restart">Zum Hauptmenü</button>`);
+    setInfo(`🏆 Gewonnen auf „${state.diff.name}“! Du hast alle ${FINAL_WAVE} Wellen und das Brut-Mutterschiff besiegt. <button id="restart">Zum Hauptmenü</button>`);
     ui.overlay.innerHTML = "<span>GEWONNEN!</span>";
     ui.overlay.className = "won";
     state.events.push({ type: "win" });
@@ -926,6 +956,7 @@ function update(dt) {
         move = 0;
       }
     }
+    e.inTunnel = e.x > TUNNEL_RECT.x0 && e.x < TUNNEL_RECT.x1 && e.y > TUNNEL_RECT.y0 && e.y < TUNNEL_RECT.y1;
     if (e.target >= pts.length) {
       e.dead = true;
       const loss = e.kind === "drone" ? e.level : HEAVY[e.kind].lifeDamage;
@@ -1365,7 +1396,7 @@ function showUpgradePreview(t, p) {
 
 function showObstacleInfo(col, row) {
   const def = OBSTACLES[grid[row][col]];
-  setInfo(`<b>${def.name}</b> – blockiert dieses Feld. <button id="clear">Entfernen (${formatNumber(priceOf(def.clearCost))} 💰)</button>`);
+  setInfo(`<b>${def.name}</b> – blockiert dieses Feld. <button id="clear">Abreißen (${formatNumber(priceOf(def.clearCost))} 💰)</button>`);
   document.getElementById("clear").onclick = clearObstacle;
   updateHud();
 }
@@ -1375,11 +1406,11 @@ function renderLegend() {
     `<span class="lvl"><span class="swatch" style="background:${d.color};box-shadow:0 0 8px ${d.color}"></span>Stufe ${i + 1}</span>`).join(" ");
   const props = Object.values(PROPS).map((p) => `<div class="enemy"><b>${p.icon} ${p.name}</b> (ab Welle ${p.from}) – ${p.desc}</div>`).join("");
   ui.legend.innerHTML =
-    `<div class="enemy"><b>Stufen-Drohnen</b> – Jeder Schadenspunkt senkt die Stufe um 1. Stufe 1 wird zerstört. Höhere Stufen sind schneller. Ein Gegner, der durchkommt, kostet so viele Leben, wie er Stufen hat.<br>${levels}</div>` +
+    `<div class="enemy"><b>Stufen-Aliens</b> – Jeder Schadenspunkt senkt die Stufe um 1. Stufe 1 wird zerstört. Höhere Stufen sind schneller. Ein Gegner, der durchkommt, kostet so viele Leben, wie er Stufen hat.<br>${levels}</div>` +
     `<div class="enemy"><b>Spezialeigenschaften</b> (auch kombiniert):</div>${props}` +
-    `<div class="enemy"><b>Panzerkern</b> (ab Welle 22) – hält viel aus und zerfällt in zwei Stufe-5-Drohnen.</div>` +
-    `<div class="enemy"><b>Omega-Koloss</b> – Boss in Welle 30, kehrt ab Welle 40 immer wieder zurück. Zerfällt in 4 Panzerkerne.</div>` +
-    `<div class="enemy"><b>Hyperion-Mutterschiff</b> – Endboss in Welle 50. In ihm stecken 4 Omega-Kolosse.</div>`;
+    `<div class="enemy"><b>Brocken</b> (ab Welle 22) – hält viel aus und zerfällt in zwei Stufe-5-Aliens.</div>` +
+    `<div class="enemy"><b>Omega-Jäger</b> – Boss in Welle 30, kehrt ab Welle 40 immer wieder zurück. Zerfällt in 4 Brocken.</div>` +
+    `<div class="enemy"><b>Brut-Mutterschiff</b> – Endboss in Welle 50. In ihm stecken 4 Omega-Jäger.</div>`;
 }
 
 // Lebensanzeigen der Bosse
@@ -1462,10 +1493,10 @@ function renderMenu() {
     html += '<div class="menu-note" id="menuNote"></div>';
   } else if (menuScreen === "help") {
     html += `<div class="menu-help">
-      <p><b>Ziel:</b> Überstehe ${FINAL_WAVE} Wellen. In Welle 30 kommt der Omega-Koloss, in Welle 50 das Hyperion-Mutterschiff.</p>
+      <p><b>Ziel:</b> Überstehe ${FINAL_WAVE} Wellen. In Welle 30 kommt der Omega-Jäger, in Welle 50 das Brut-Mutterschiff.</p>
       <p><b>Bauen:</b> Turm unten wählen (Tasten 1–5), dann ein Feld im Hologramm-Raster anklicken. Umschalttaste für mehrere Türme, Esc bricht ab.</p>
       <p><b>Upgrades:</b> Jeder Turm hat 3 Ausbauwege mit je 5 Stufen. Maximal 5-2-0: ein Weg bis 5, ein zweiter bis 2.</p>
-      <p><b>Gegner:</b> Jeder Schadenspunkt senkt die Stufe einer Drohne. Achte auf Spezialgegner (Tarnung, Frostschild, Explosionspanzer, Spiegelpanzer, Regeneration).</p>
+      <p><b>Gegner:</b> Jeder Schadenspunkt senkt die Stufe eines Aliens. Achte auf Spezialgegner (Tarnung, Frostschild, Explosionspanzer, Spiegelpanzer, Regeneration).</p>
       <p><b>Steuerung:</b> Leertaste = Welle starten, P = Pause (Bauen geht weiter), Maus ziehen = Kamera drehen, Rechte Maustaste = verschieben, Mausrad = zoomen.</p>
     </div><div class="menu-buttons"><button data-act="main" class="back">← Zurück</button></div>`;
   }
@@ -1544,7 +1575,7 @@ function handleTileClick(col, row, keepBuilding = false, px, py) {
     showTowerInfo(t);
     return;
   }
-  if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return;
+  if (!inGrid(col, row)) return;
   const tower = towerAt(col, row);
   if (tower) {
     state.buildMode = false;
@@ -1564,15 +1595,19 @@ function handleTileClick(col, row, keepBuilding = false, px, py) {
   }
   state.selected = null;
   state.preview = null;
-  if (cell === "pool") setInfo("Auf einem Energiesee kann nicht gebaut werden.");
-  else if (cell === "gate") setInfo("Das ist dein Stadttor – verteidige es!");
-  else if (state.buildMode && canBuild(col, row)) {
-    if (placeTower(col, row) && !keepBuilding && !state.aiming) {
+  const spot = buildAnchor(px, py);
+  if (state.buildMode && canBuild(spot.col, spot.row)) {
+    if (placeTower(spot.col, spot.row) && !keepBuilding && !state.aiming) {
       state.buildMode = false;
       renderShop();
       setInfo(`${TOWER_TYPES[state.selectedType].name} gebaut. Klicke auf den Turm, um ihn zu verbessern.`);
     }
-  } else if (!state.buildMode) setInfo("Wähle unten einen Turm aus, um zu bauen.");
+  } else if (state.buildMode) setInfo("Ein Turm braucht 2×2 freie Felder.");
+  else if (cell === "pool") setInfo("Im See kann nicht gebaut werden.");
+  else if (cell === "plaza") setInfo("Die Uferpromenade bleibt frei.");
+  else if (cell === "tunnel") setInfo("Im Röhren-Tunnel schrumpfen die Aliens und sind unverwundbar.");
+  else if (cell === "gate") setInfo("Das ist dein Stadttor – verteidige es!");
+  else setInfo("Wähle unten einen Turm aus, um zu bauen.");
 }
 
 function togglePause() {

@@ -1,37 +1,49 @@
 "use strict";
 
 // Spieldaten: Karte, Schwierigkeitsgrade, Gegner, Türme mit Ausbauwegen und Wellen.
-// Positionen werden in "Pixeln" auf einem 800×480-Raster gerechnet (40 px pro Feld).
+// Positionen werden in "Pixeln" auf einem 960×560-Raster gerechnet (40 px pro Feld).
+// Türme belegen 2×2 Felder.
 
 const TILE = 40;
-const COLS = 20;
-const ROWS = 12;
+const COLS = 24;
+const ROWS = 14;
 const MAP_SEED = 1337;
 const FINAL_WAVE = 50;
 const MAX_TIER = 5;
+const TOWER_SIZE = 2;
 
 // ---------- Karte ----------
-// Zwei Startwege, die sich bei (6,6) zu einem gemeinsamen Weg vereinen (Feld-Koordinaten).
-const SHARED_PATH = [[6, 6], [11, 6], [11, 3], [16, 3], [16, 9], [20, 9]];
+// Serpentine: zwei Startwege vereinen sich bei (4,7), danach schlängelt sich der Weg zum Stadttor.
+const SHARED_PATH = [[4, 7], [8, 7], [8, 11], [12, 11], [12, 3], [16, 3], [16, 11], [20, 11], [20, 5], [24, 5]];
 const PATHS = [
-  [[-1, 2], [6, 2], ...SHARED_PATH],
-  [[-1, 10], [6, 10], ...SHARED_PATH],
+  [[-1, 1], [4, 1], ...SHARED_PATH],
+  [[-1, 12], [4, 12], ...SHARED_PATH],
 ];
 
-// Energieseen: hier kann niemals gebaut werden
+// Röhren-Tunnel: Aliens werden eingesaugt, schrumpfen und sind darin unverwundbar
+const TUNNEL = { col: 12, rowFrom: 5, rowTo: 9 };
+
+// Seen mit Uferpromenade: hier kann niemals gebaut werden
 const POOLS = [
-  [[8, 8], [9, 8], [10, 8], [8, 9], [9, 9], [10, 9], [9, 10]],
-  [[1, 5], [2, 5], [1, 6], [2, 6], [3, 6], [2, 7]],
-  [[17, 0], [18, 0], [18, 1]],
+  [[7, 2], [8, 2], [9, 2], [7, 3], [8, 3], [9, 3], [8, 4]],
+  [[22, 9], [23, 9], [22, 10], [23, 10], [22, 11]],
 ];
 
 // Stadttor am Ende des Weges (hier starten auch die Raumschiffe)
-const GATE_TILES = [[19, 8], [19, 10]];
+const GATE_TILES = [[23, 4], [23, 6]];
 
-// Hindernisse, die man gegen Gold entfernen kann
+// Gebäude auf dem Spielfeld, die man gegen Gold abreißen kann
 const OBSTACLES = {
-  kiosk: { name: "Holo-Kiosk", clearCost: 60, count: 22 },
-  crate: { name: "Frachtcontainer", clearCost: 120, count: 14 },
+  tower: { name: "Mini-Hochhaus", clearCost: 140, count: 7 },
+  diner: { name: "Retro-Diner", clearCost: 90, count: 3 },
+  arcade: { name: "Spielhalle", clearCost: 110, count: 3 },
+  dome: { name: "Glaskuppel", clearCost: 100, count: 3 },
+  antenna: { name: "Funkmast", clearCost: 70, count: 3 },
+  shop: { name: "Neon-Laden", clearCost: 80, count: 4 },
+  garage: { name: "Parkhaus", clearCost: 120, count: 2 },
+  kiosk: { name: "Holo-Kiosk", clearCost: 50, count: 3 },
+  palms: { name: "Palmengarten", clearCost: 40, count: 4 },
+  tank: { name: "Kühltank", clearCost: 90, count: 3 },
 };
 
 // ---------- Schwierigkeitsgrade ----------
@@ -42,7 +54,7 @@ const DIFFICULTIES = {
 };
 
 // ---------- Gegner ----------
-// Stufen-Drohnen: jeder Schadenspunkt senkt die Stufe um 1, Stufe 1 wird zerstört.
+// Stufen-Aliens: jeder Schadenspunkt senkt die Stufe um 1, Stufe 1 wird zerstört.
 const DRONE_LEVELS = [
   null,
   { speed: 46, color: "#29e6ff", radius: 8 },
@@ -66,9 +78,9 @@ const DAMAGE_IMMUNITY = { laser: "shield", blast: "blast", cold: "frost" };
 const DAMAGE_NAMES = { laser: "Laser", blast: "Explosion", cold: "Kälte", fire: "Brand", pure: "Rein" };
 
 const HEAVY = {
-  tank: { name: "Panzerkern", speed: 32, radius: 16, hp: 26, hpPerWave: 2.2, reward: 25, lifeDamage: 15, color: "#b0b8d8" },
-  bossA: { name: "Omega-Koloss", speed: 11, radius: 34, hp: 1000, reward: 300, lifeDamage: 9999, color: "#e0e6ff" },
-  bossB: { name: "Hyperion-Mutterschiff", speed: 8, radius: 48, hp: 9000, reward: 1000, lifeDamage: 9999, color: "#ffd6f5" },
+  tank: { name: "Brocken", speed: 32, radius: 16, hp: 26, hpPerWave: 2.2, reward: 25, lifeDamage: 15, color: "#b0b8d8" },
+  bossA: { name: "Omega-Jäger", speed: 11, radius: 34, hp: 1000, reward: 300, lifeDamage: 9999, color: "#e0e6ff" },
+  bossB: { name: "Brut-Mutterschiff", speed: 8, radius: 48, hp: 9000, reward: 1000, lifeDamage: 9999, color: "#ffd6f5" },
 };
 
 // ---------- Türme ----------
@@ -92,7 +104,7 @@ const TOWER_TYPES = {
         { name: "Durchschlag", cost: 320, desc: "Schüsse durchdringen bis zu 3 Gegner.", apply: (s) => { s.pierce = Math.max(s.pierce, 3); } },
         { name: "Plasma-Fokus", cost: 950, desc: "+2 Schaden, durchdringt Spiegelpanzer.", apply: (s) => { s.dmg += 2; s.pierceShield = true; } },
         { name: "Railgun", cost: 3200, desc: "Schaden 8, durchdringt 8 Gegner, +40 % Reichweite, aber langsamer.", apply: (s) => { s.dmg = Math.max(s.dmg, 8); s.pierce = Math.max(s.pierce, 8); s.rate *= 1.6; s.range *= 1.4; s.projSpeed = 1400; s.rail = true; } },
-        { name: "Singularitäts-Lanze", cost: 12500, desc: "Schaden 25, durchdringt 20 Gegner, ×4 gegen Panzerkerne und Bosse.", apply: (s) => { s.dmg = Math.max(s.dmg, 25); s.pierce = Math.max(s.pierce, 20); s.heavyMult = 4; } },
+        { name: "Singularitäts-Lanze", cost: 12500, desc: "Schaden 25, durchdringt 20 Gegner, ×4 gegen Brocken und Bosse.", apply: (s) => { s.dmg = Math.max(s.dmg, 25); s.pierce = Math.max(s.pierce, 20); s.heavyMult = 4; } },
       ] },
       { name: "Sensorik", tiers: [
         { name: "Teleskop", cost: 110, desc: "+25 % Reichweite.", apply: (s) => { s.range *= 1.25; } },
@@ -112,7 +124,7 @@ const TOWER_TYPES = {
         { name: "Größere Ladung", cost: 220, desc: "+30 % Explosionsradius.", apply: (s) => { s.splash *= 1.3; } },
         { name: "Schwerer Sprengkopf", cost: 380, desc: "+1 Schaden, trifft bis zu 25 Gegner.", apply: (s) => { s.dmg += 1; s.pierce = 25; } },
         { name: "Clusterbomben", cost: 950, desc: "Jede Explosion setzt 6 Mini-Bomben frei.", apply: (s) => { s.cluster = 6; } },
-        { name: "Bunkerbrecher", cost: 3400, desc: "+3 Schaden, ×3 gegen Panzerkerne und Bosse.", apply: (s) => { s.dmg += 3; s.heavyMult = 3; } },
+        { name: "Bunkerbrecher", cost: 3400, desc: "+3 Schaden, ×3 gegen Brocken und Bosse.", apply: (s) => { s.dmg += 3; s.heavyMult = 3; } },
         { name: "Supernova", cost: 14500, desc: "Riesige Explosion mit 12 Schaden, die kurz betäubt.", apply: (s) => { s.dmg = Math.max(s.dmg, 12); s.splash *= 2.2; s.stun = Math.max(s.stun || 0, 0.6); s.pierce = 80; } },
       ] },
       { name: "Schnellfeuer", tiers: [
@@ -273,6 +285,10 @@ const pathCumulative = pathPoints.map((pts) => {
 });
 
 const pathTiles = new Set();
+const tunnelTiles = new Set();
+for (let r = TUNNEL.rowFrom; r <= TUNNEL.rowTo; r++) tunnelTiles.add(`${TUNNEL.col},${r}`);
+// Tunnelbereich in Pixeln (für Unverwundbarkeit und Schrumpfen)
+const TUNNEL_RECT = { x0: TUNNEL.col * TILE, x1: (TUNNEL.col + 1) * TILE, y0: TUNNEL.rowFrom * TILE, y1: (TUNNEL.rowTo + 1) * TILE };
 for (const path of PATHS) {
   for (let i = 0; i < path.length - 1; i++) {
     let [c, r] = path[i];
@@ -352,7 +368,7 @@ function buildWave(n, diff) {
     path = 1 - path;
   }
 
-  // Panzerkerne ab Welle 22
+  // Brocken ab Welle 22
   if (n >= 22) {
     const tanks = Math.floor((n - 19) / 3 * diff.count);
     for (let i = 0; i < tanks; i++) {
@@ -386,9 +402,9 @@ function waveAnnouncement(n) {
   for (const [key, p] of Object.entries(PROPS)) {
     if (p.from === n) return `Neu: ${p.icon} ${p.name} – ${p.desc}`;
   }
-  if (n === 22) return "Neu: Panzerkerne – sie halten viel aus und zerfallen in zwei Stufe-5-Drohnen.";
-  if (n === 30) return "⚠ BOSS: Der Omega-Koloss greift an!";
-  if (BOSS_RETURNS[n]) return BOSS_RETURNS[n] > 1 ? "⚠ Zwei Omega-Kolosse kehren zurück!" : "⚠ Der Omega-Koloss kehrt zurück!";
-  if (n === FINAL_WAVE) return "⚠ ENDBOSS: Das Hyperion-Mutterschiff – in ihm stecken 4 Omega-Kolosse!";
+  if (n === 22) return "Neu: Brocken – sie halten viel aus und zerfallen in zwei Stufe-5-Aliens.";
+  if (n === 30) return "⚠ BOSS: Der Omega-Jäger greift an!";
+  if (BOSS_RETURNS[n]) return BOSS_RETURNS[n] > 1 ? "⚠ Zwei Omega-Jäger kehren zurück!" : "⚠ Der Omega-Jäger kehrt zurück!";
+  if (n === FINAL_WAVE) return "⚠ ENDBOSS: Das Brut-Mutterschiff – in ihm stecken 4 Omega-Jäger!";
   return "";
 }

@@ -26,6 +26,8 @@
       "style.css",
       "data.js",
       "audio.js",
+      "aliens.js",
+      "buildings.js",
       "scene.js",
       "game.js",
       "lib/**",
