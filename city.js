@@ -73,12 +73,24 @@ const City = (() => {
       return t;
     });
   }
-  const towerMat = (seed) => () => shared(`towerMat${seed}`, () => new THREE.MeshStandardMaterial({
+  // Fenstermaterialien merken, damit nachts mehr Fenster leuchten können
+  const lit = [];
+  const remember = (m) => {
+    m.userData.baseEmissive = m.emissiveIntensity;
+    lit.push(m);
+    return m;
+  };
+  const towerMat = (seed) => () => shared(`towerMat${seed}`, () => remember(new THREE.MeshStandardMaterial({
     color: "#1d1433", metalness: 0.85, roughness: 0.28, emissive: "#ffffff", emissiveMap: windowTex(seed), emissiveIntensity: 1.1,
-  }));
-  const decoMat = (color, seed) => () => shared(`deco${color}${seed}`, () => new THREE.MeshStandardMaterial({
+  })));
+  const decoMat = (color, seed) => () => shared(`deco${color}${seed}`, () => remember(new THREE.MeshStandardMaterial({
     color: new THREE.Color(color).multiplyScalar(0.6), metalness: 0.15, roughness: 0.6, emissive: "#ffe6c8", emissiveMap: windowTex(seed), emissiveIntensity: 0.3,
-  }));
+  })));
+
+  // Helligkeit der Fenster (1 = normal, nachts höher)
+  function setLight(k) {
+    for (const m of lit) m.emissiveIntensity = m.userData.baseEmissive * k;
+  }
   const plainMat = (color, rough = 0.6, metal = 0.1) => () => shared(`plain${color}${rough}${metal}`, () => new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal }));
 
   // ---------- Straßen ----------
@@ -525,5 +537,5 @@ const City = (() => {
     return group;
   }
 
-  return { build };
+  return { build, setLight };
 })();

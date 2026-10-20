@@ -239,6 +239,53 @@ const View = (() => {
     });
   }
 
+  // ---------- Tag-Nacht-Wechsel über die Wellen ----------
+  // Stützpunkte (Welle → Stimmung); dazwischen wird weich überblendet
+  const sky = {};
+  const MOODS = [
+    { wave: 0, top: "#1a2366", mid: "#6a3a9a", low: "#ff6a8a", horizon: "#ffb36a", fog: "#6a2a6a", fogD: 0.009, hemi: "#c0a0ff", hemiI: 0.8, sun: "#ffb08a", sunI: 0.85, sunY: 32, gain: 1.15, stars: 0.15, bloom: 0.65, city: 0.7 },
+    { wave: 15, top: "#0b0626", mid: "#3b0f63", low: "#c2257f", horizon: "#ff8a5c", fog: "#4a1660", fogD: 0.011, hemi: "#9a6bff", hemiI: 0.6, sun: "#ff8a6a", sunI: 0.75, sunY: 20, gain: 1.05, stars: 0.6, bloom: 0.75, city: 1.0 },
+    { wave: 30, top: "#03020f", mid: "#140b40", low: "#3c1a70", horizon: "#a02a7a", fog: "#1c0a3a", fogD: 0.012, hemi: "#6a5ac0", hemiI: 0.45, sun: "#8aa0ff", sunI: 0.5, sunY: -50, gain: 0.6, stars: 1.0, bloom: 0.95, city: 1.35 },
+    { wave: 45, top: "#000006", mid: "#0a0628", low: "#2a0a4a", horizon: "#5a1a5a", fog: "#0e0626", fogD: 0.013, hemi: "#5a4ab0", hemiI: 0.4, sun: "#7a8aff", sunI: 0.42, sunY: -90, gain: 0.5, stars: 1.0, bloom: 1.05, city: 1.5 },
+    { wave: 50, top: "#1a0010", mid: "#4a0020", low: "#b0103a", horizon: "#ff3a2a", fog: "#3a0818", fogD: 0.012, hemi: "#c05a7a", hemiI: 0.55, sun: "#ff4a3a", sunI: 0.75, sunY: 6, gain: 0.95, stars: 0.5, bloom: 1.0, city: 1.3 },
+  ];
+  let moodT = -1; // aktuell angezeigte Wellen-Stimmung (weich nachgeführt)
+  const moodA = new THREE.Color();
+  const moodB = new THREE.Color();
+
+  function applyMood(w) {
+    let i = 0;
+    while (i < MOODS.length - 2 && w > MOODS[i + 1].wave) i++;
+    const a = MOODS[i];
+    const b = MOODS[i + 1];
+    const k = THREE.MathUtils.clamp((w - a.wave) / (b.wave - a.wave), 0, 1);
+    const col = (key, target) => target.copy(moodA.set(a[key])).lerp(moodB.set(b[key]), k);
+    const num = (key) => a[key] + (b[key] - a[key]) * k;
+    for (const key of ["top", "mid", "low", "horizon"]) col(key, sky.mat.uniforms[key].value);
+    col("fog", scene.fog.color);
+    scene.fog.density = num("fogD");
+    col("hemi", sky.hemi.color);
+    sky.hemi.intensity = num("hemiI");
+    col("sun", sky.sun.color);
+    sky.sun.intensity = num("sunI");
+    sky.sunDisc.position.y = num("sunY");
+    sky.sunGlow.position.y = num("sunY") - 2;
+    sky.sunMat.uniforms.gain.value = num("gain");
+    sky.stars.opacity = num("stars");
+    if (bloomPass) bloomPass.strength = num("bloom");
+    City.setLight(num("city"));
+  }
+
+  function updateMood(dt) {
+    const target = state ? Math.min(FINAL_WAVE, state.wave) : 0;
+    if (moodT < 0) moodT = target;
+    // langsam zur neuen Stimmung gleiten (etwa 1 Welle pro 4 Sekunden)
+    const step = dt * 0.25 * Math.max(1, Math.abs(target - moodT));
+    if (Math.abs(target - moodT) <= step) moodT = target;
+    else moodT += Math.sign(target - moodT) * step;
+    applyMood(moodT);
+  }
+
   // ---------- Initialisierung ----------
   function init(el) {
     container = el;
@@ -303,7 +350,8 @@ const View = (() => {
     scene.environment = pmrem.fromScene(envScene, 0.02).texture;
 
     // Himmel und Sterne
-    scene.add(new THREE.Mesh(new THREE.SphereGeometry(330, 32, 16), skyMaterial()));
+    sky.mat = skyMaterial();
+    scene.add(new THREE.Mesh(new THREE.SphereGeometry(330, 32, 16), sky.mat));
     const starPos = [];
     for (let i = 0; i < 600; i++) {
       const a = Math.random() * Math.PI * 2;
@@ -313,11 +361,14 @@ const View = (() => {
     }
     const starGeo = new THREE.BufferGeometry();
     starGeo.setAttribute("position", new THREE.Float32BufferAttribute(starPos, 3));
-    scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({ color: "#ffe6f6", size: 1.5, sizeAttenuation: false, fog: false })));
+    sky.stars = new THREE.PointsMaterial({ color: "#ffe6f6", size: 1.5, sizeAttenuation: false, fog: false, transparent: true });
+    scene.add(new THREE.Points(starGeo, sky.stars));
 
     // Licht: warme Abendsonne von der Meerseite, kühles Neonlicht von der Stadt
-    scene.add(new THREE.HemisphereLight("#9a6bff", "#2a0b30", 0.6));
+    sky.hemi = new THREE.HemisphereLight("#9a6bff", "#2a0b30", 0.6);
+    scene.add(sky.hemi);
     const sun = new THREE.DirectionalLight("#ff8a6a", 0.75);
+    sky.sun = sun;
     sun.position.set(-5, 10, -16);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
@@ -541,13 +592,16 @@ const View = (() => {
 
     // Sonne, Glühen und Berge am Horizont
     const sunMat = sunMaterial();
+    sky.sunMat = sunMat;
     const sunDisc = new THREE.Mesh(new THREE.PlaneGeometry(130, 130), sunMat);
+    sky.sunDisc = sunDisc;
     sunDisc.position.set(0, 20, -270);
     world.add(sunDisc);
     const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({
       map: glowTexture(), color: "#ff4f8a", transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
     }));
     sunGlow.scale.setScalar(260);
+    sky.sunGlow = sunGlow;
     sunGlow.position.set(0, 18, -275);
     world.add(sunGlow);
     animated.push({ static: true, fn: (t) => { sunMat.uniforms.time.value = t; } });
@@ -2142,6 +2196,7 @@ const View = (() => {
     controls.target.y = 0;
 
     for (const a of animated) a.fn(realTime);
+    updateMood(dt);
     updateDashes(realTime);
 
     // Glitzerstaub langsam aufsteigen lassen
@@ -2375,5 +2430,5 @@ const View = (() => {
     controls.update();
   }
 
-  return { init, buildMap, removeObstacle, render, resetCamera, setMenuMode, lookAt, towerPreview };
+  return { init, buildMap, removeObstacle, render, resetCamera, setMenuMode, lookAt, towerPreview, debugMood: (force) => { if (force) moodT = state.wave; return { moodT, calls: renderer.info.render.calls, tris: renderer.info.render.triangles }; } };
 })();
