@@ -156,6 +156,11 @@ function newGame(diffKey) {
     won: false,
     time: 0,
     frame: 0,
+    abilityCd: {}, // Abklingzeiten der Spezialfähigkeiten
+    pendingStrikes: [], // verzögerte Einschläge (Feuersturm, Sperrfeuer)
+    overchargeUntil: 0,
+    waveLeaked: false,
+    streak: 0, // Wellen am Stück ohne Lebensverlust
   };
   View.buildMap();
   ui.overlay.hidden = true;
@@ -299,6 +304,7 @@ function damageEnemy(e, amount, type, tower, opts = {}) {
     if (e.level <= 0) {
       e.dead = true;
       if (tower) tower.stats.kills++;
+      Achievements.add("kills", 1);
     }
     state.events.push({ type: "pop", x: e.x, y: e.y, color, level: e.level + dealt, dead: e.dead });
   } else {
@@ -308,6 +314,9 @@ function damageEnemy(e, amount, type, tower, opts = {}) {
       e.dead = true;
       const h = HEAVY[e.kind];
       state.gold += h.reward;
+      Achievements.add("goldEarned", h.reward);
+      Achievements.add("kills", 1);
+      if (e.kind === "bossA") Achievements.add("bossKills", 1);
       state.texts.push({ x: e.x, y: e.y, text: `+${h.reward}`, life: 1.2, max: 1.2 });
       if (tower) tower.stats.kills++;
       state.events.push({ type: "heavyDeath", x: e.x, y: e.y, kind: e.kind, color: h.color });
@@ -320,6 +329,7 @@ function damageEnemy(e, amount, type, tower, opts = {}) {
 }
 
 function addGold(amount) {
+  Achievements.add("goldEarned", amount);
   state.goldFrac += amount;
   const whole = Math.floor(state.goldFrac);
   state.gold += whole;
@@ -387,6 +397,8 @@ function upgradeBlock(t, p) {
   const others = [0, 1, 2].filter((q) => q !== p);
   if (lv[p] === 0 && others.every((q) => lv[q] > 0)) return "🔒 nur 2 Wege kombinierbar";
   if (lv[p] + 1 > 2 && others.some((q) => lv[q] > 2)) return "🔒 max. Stufe 2 (anderer Weg ist höher)";
+  // jedes Stufe-5-Upgrade gibt es pro Turmart nur einmal auf der Karte
+  if (lv[p] + 1 === MAX_TIER && state.towers.some((o) => o !== t && o.type === t.type && o.levels[p] >= MAX_TIER)) return "🔒 Stufe 5 gibt es nur 1× auf der Karte";
   return null;
 }
 
@@ -467,6 +479,7 @@ function placeTower(col, row) {
   state.gold -= cost;
   const t = createTower(typeKey, col, row);
   state.towers.push(t);
+  Achievements.add("built", 1);
   puff(t.x, t.y, type.color, 12);
   state.events.push({ type: "build" });
   if (typeKey === "mortar") {
@@ -484,6 +497,10 @@ function upgradeTower(t, p) {
   state.gold -= cost;
   t.invested += cost;
   t.levels[p]++;
+  if (t.levels[p] === MAX_TIER) {
+    Achievements.add("tier5", 1);
+    showBanner(`${ABILITIES[t.type].icon} ${ABILITIES[t.type].name}`, "Spezialfähigkeit freigeschaltet! Knopf oben links im Spielfeld.");
+  }
   puff(t.x, t.y, PATH_COLORS[p], 16, 30);
   state.events.push({ type: "upgrade", tier: t.levels[p] });
   state.preview = null;
@@ -519,6 +536,7 @@ function clearObstacle() {
   puff(s.col * TILE + TILE / 2, s.row * TILE + TILE / 2, "#ff4fd8", 18, 20);
   grid[s.row][s.col] = "pad";
   state.cleared.push(`${s.col},${s.row}`);
+  Achievements.add("demolished", 1);
   View.removeObstacle(s.col, s.row);
   state.selected = null;
   state.events.push({ type: "sell" });
@@ -827,6 +845,7 @@ function startWave() {
   state.waveTime = 0;
   state.waveActive = true;
   state.autoTimer = 0;
+  state.waveLeaked = false;
   const note = waveAnnouncement(state.wave);
   const isBossWave = state.wave === 30 || state.wave === FINAL_WAVE || BOSS_RETURNS[state.wave];
   showBanner(isBossWave ? `⚠ Welle ${state.wave} ⚠` : `Welle ${state.wave}`, note);
@@ -842,11 +861,18 @@ function startWave() {
 function finishWave() {
   state.waveActive = false;
   if (state.wave >= FINAL_WAVE) {
+    Achievements.setMax("bestWave", state.wave);
+    Achievements.setMax("winLevel", { easy: 1, normal: 2, hard: 3 }[state.diffKey]);
     endGame(true);
     return;
   }
   const bonus = 100 + state.wave * 25;
   state.gold += bonus;
+  Achievements.add("goldEarned", bonus);
+  Achievements.setMax("bestWave", state.wave);
+  state.streak = state.waveLeaked ? 0 : (state.streak || 0) + 1;
+  Achievements.setMax("bestStreak", state.streak);
+  Achievements.save();
   setInfo(`Welle ${state.wave} geschafft! +${bonus} 💰 Bonus. Spielstand gespeichert.`);
   state.events.push({ type: "waveEnd" });
   saveGame();
@@ -860,6 +886,7 @@ function endGame(won) {
   state.ships = [];
   state.buildMode = false;
   writeStorage(SAVE_KEY, null);
+  Achievements.save();
   if (won) {
     setInfo(`🏆 Gewonnen auf „${state.diff.name}“! Du hast alle ${FINAL_WAVE} Wellen und das Brut-Mutterschiff besiegt. <button id="restart">Zum Hauptmenü</button>`);
     ui.overlay.innerHTML = "<span>GEWONNEN!</span>";
@@ -882,6 +909,7 @@ function update(dt) {
   state.time += dt;
   state.frame++;
   const now = state.time;
+  updateAbilities(dt);
 
   if (state.autoTimer > 0) {
     state.autoTimer -= dt;
@@ -952,6 +980,7 @@ function update(dt) {
       e.dead = true;
       const loss = e.kind === "drone" ? e.level : HEAVY[e.kind].lifeDamage;
       state.lives -= loss;
+      state.waveLeaked = true;
       state.events.push({ type: "leak" });
       if (state.lives <= 0) {
         state.lives = 0;
@@ -983,7 +1012,7 @@ function update(dt) {
     const s = towerStats(t);
     t.cooldown -= dt;
     t.recoil = Math.max(0, t.recoil - dt * 4);
-    const rate = (s.rate || 1) * t.auraRate;
+    const rate = (s.rate || 1) * t.auraRate * (t.type === "laser" && state.overchargeUntil > now ? 1 / 3 : 1);
     if (t.type === "laser") {
       if (t.cooldown <= 0 && fireLaser(t, s)) {
         t.cooldown = rate;
@@ -1230,11 +1259,11 @@ function updateHud() {
     for (const btn of ui.info.querySelectorAll("button.up[data-p]")) {
       const p = Number(btn.dataset.p);
       btn.disabled = !!upgradeBlock(t, p);
-      btn.classList.toggle("poor", state.gold < upgradeCost(t, p));
+      btn.classList.toggle("poor", t.levels[p] < MAX_TIER && state.gold < upgradeCost(t, p));
     }
     const buy = document.getElementById("buyUp");
     const sel = state.upSelect;
-    if (buy && sel && sel.tower === t) buy.disabled = state.gold < upgradeCost(t, sel.p);
+    if (buy && sel && sel.tower === t && t.levels[sel.p] < MAX_TIER) buy.disabled = state.gold < upgradeCost(t, sel.p);
   }
   const clearBtn = document.getElementById("clear");
   if (clearBtn && state.selected && state.selected.kind === "obstacle") {
@@ -1526,6 +1555,7 @@ function renderMenu() {
     if (save) html += `<button data-act="continue">⟲ Weiterspielen <small>Welle ${save.wave} · ${DIFFICULTIES[save.diffKey].name}</small></button>`;
     html += '<button data-act="new">✦ Neues Spiel</button>';
     html += '<button data-act="settings">⚙ Einstellungen</button>';
+    html += `<button data-act="achievements">🏆 Erfolge <small>${Achievements.count()} von ${ACHIEVEMENTS.length * 3} Trophäen</small></button>`;
     html += '<button data-act="help">? Anleitung</button>';
     html += '<button data-act="versions">📜 Alle Versionen</button>';
     html += "</div>";
@@ -1547,11 +1577,16 @@ function renderMenu() {
     html += `<button data-act="delete" ${save ? "" : "disabled"}>🗑 Spielstand löschen</button>`;
     html += '<button data-act="main" class="back">← Zurück</button></div>';
     html += '<div class="menu-note" id="menuNote"></div>';
+  } else if (menuScreen === "achievements") {
+    html += `<div class="menu-sub">Erfolge · ${Achievements.count()} von ${ACHIEVEMENTS.length * 3} Trophäen</div>${Achievements.listHtml()}`;
+    html += '<div class="menu-buttons"><button data-act="main" class="back">← Zurück</button></div>';
   } else if (menuScreen === "help") {
     html += `<div class="menu-help">
       <p><b>Ziel:</b> Überstehe ${FINAL_WAVE} Wellen. In Welle 30 kommt der Omega-Jäger, in Welle 50 das Brut-Mutterschiff.</p>
       <p><b>Bauen:</b> Turm unten wählen (Tasten 1–5), dann ein Feld im Hologramm-Raster anklicken. Umschalttaste für mehrere Türme, Esc bricht ab.</p>
-      <p><b>Upgrades:</b> Jeder Turm hat 3 Ausbauwege mit je 5 Stufen. Maximal 5-2-0: ein Weg bis 5, ein zweiter bis 2.</p>
+      <p><b>Upgrades:</b> Jeder Turm hat 3 Ausbauwege mit je 5 Stufen. Maximal 5-2-0: ein Weg bis 5, ein zweiter bis 2. Jedes Stufe-5-Upgrade gibt es nur einmal auf der Karte.</p>
+      <p><b>Spezialfähigkeiten:</b> Sobald ein Turm Stufe 5 hat, erscheint oben links im Spielfeld ein Knopf für die Fähigkeit seiner Turmart (mit Abklingzeit).</p>
+      <p><b>Tunnel:</b> Im Tunnelberg schrumpfen die Aliens und sind unverwundbar.</p>
       <p><b>Gegner:</b> Jeder Schadenspunkt senkt die Stufe eines Aliens. Achte auf Spezialgegner (Tarnung, Frostschild, Explosionspanzer, Spiegelpanzer, Regeneration).</p>
       <p><b>Steuerung:</b> Leertaste = Welle starten, P = Pause (Bauen geht weiter), Maus ziehen = Kamera drehen, Rechte Maustaste = verschieben, Mausrad = zoomen.</p>
     </div><div class="menu-buttons"><button data-act="main" class="back">← Zurück</button></div>`;
@@ -1724,6 +1759,7 @@ function loop(now) {
     }
     updateHud();
   }
+  updateAbilityBar();
   View.render(dt);
   Sound.handleEvents(state.events, state);
   state.events.length = 0;

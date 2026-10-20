@@ -30,6 +30,7 @@
       "buildings.js",
       "towers.js",
       "scene.js",
+      "progress.js",
       "game.js",
       "lib/**",
       "versionen/**",
