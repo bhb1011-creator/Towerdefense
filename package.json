@@ -29,6 +29,7 @@
       "aliens.js",
       "buildings.js",
       "towers.js",
+      "city.js",
       "scene.js",
       "progress.js",
       "game.js",

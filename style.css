@@ -861,6 +861,11 @@ button.buy {
 }
 
 /* ---------- Spezialfähigkeiten ---------- */
+#abilities[hidden],
+button.ability[hidden] {
+  display: none !important;
+}
+
 #abilities {
   position: absolute;
   left: 12px;

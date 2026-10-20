@@ -532,7 +532,7 @@ const View = (() => {
   // ---------- Die Welt rund um das Spielfeld (einmalig) ----------
   // Norden (−Z): Strand, Meer, Retro-Sonne und Berge. Westen, Osten, Süden: die Stadt.
   const GROUND_Y = -0.6;
-  const SHORE_Z = -10.5;
+  const SHORE_Z = -18;
 
   function buildWorld() {
     const rng = mulberry32(4242);
@@ -558,6 +558,8 @@ const View = (() => {
       [-150, -230, 220, 70, 1.0], [150, -230, 220, 70, 1.0],
       [-75, -255, 120, 50, 0.65], [75, -255, 120, 50, 0.65],
       [-235, -60, 60, 260, 1.1], [235, -60, 60, 260, 1.1],
+      // auch im Süden hinter der Stadt (rundherum Berge)
+      [-150, 215, 220, 60, 0.9], [150, 215, 220, 60, 0.9], [0, 240, 160, 50, 0.75], [-235, 120, 60, 160, 1.0], [235, 120, 60, 160, 1.0],
     ];
     for (const [x, z, w, d, hScale] of ranges) {
       const geo = new THREE.PlaneGeometry(w, d, 26, 10).rotateX(-Math.PI / 2);
@@ -645,9 +647,6 @@ const View = (() => {
     });
 
     // Strand, Schaumkante und heranrollende Welle
-    const beach = mesh(new THREE.PlaneGeometry(700, 5).rotateX(-Math.PI / 2), metal("#241037", 0.85, 0.2), { receive: true });
-    beach.position.set(0, GROUND_Y - 0.01, SHORE_Z + 1.5);
-    world.add(beach);
     const shorePts = [];
     for (let x = -120; x <= 120; x += 0.8) shorePts.push({ x, z: SHORE_Z + Math.sin(x * 0.35) * 0.25 + Math.sin(x * 0.11) * 0.4 });
     const foam = new THREE.Mesh(ribbon(shorePts, 0, 0.35, GROUND_Y + 0.005), new THREE.MeshBasicMaterial({
@@ -680,212 +679,46 @@ const View = (() => {
 
     // Felsige Landzunge und Insel mit Palmen
     const rockMat = metal("#14081f", 0.8, 0.2);
-    for (const [x, z, sx, sy, sz] of [[-34, -16, 9, 3.2, 7], [-46, -26, 12, 5, 10], [-28, -42, 7, 2.6, 6], [38, -30, 6, 2, 5]]) {
+    for (const [x, z, sx, sy, sz] of [[-74, -24, 9, 3.2, 7], [-86, -32, 12, 5, 10], [-40, -50, 7, 2.6, 6], [48, -40, 6, 2, 5]]) {
       const rock = mesh(new THREE.DodecahedronGeometry(1, 1), rockMat);
       rock.scale.set(sx, sy, sz);
       rock.position.set(x, GROUND_Y - sy * 0.35, z);
       world.add(rock);
     }
-    const palmSpots = [
-      [-30, -14, 3.6], [-35, -13, 2.8], [-38, -22, 4.2], [-27, -41, 3.0], [-29.5, -40, 2.4], [37, -29.5, 2.6],
-      [-15, -8.6, 2.6], [-12.6, -9.2, 3.2], [-17.5, -9.6, 2.2], [13.2, -8.8, 3.0], [15.8, -9.5, 2.4], [11.6, -9.6, 2.0],
-      [-11.8, 7.6, 2.2], [11.8, 7.6, 2.2],
-    ];
-    for (const [x, z, h] of palmSpots) {
+    for (const [x, z, h] of [[-72, -22, 3.6], [-77, -21, 2.8], [-80, -30, 4.2], [-39, -49, 3.0], [-41.5, -48, 2.4], [47, -39.5, 2.6]]) {
       const palm = makePalm(rng, h);
-      palm.position.set(x, x < -25 || x > 30 ? GROUND_Y + 0.6 : GROUND_Y, z);
+      palm.position.set(x, GROUND_Y + 0.6, z);
       world.add(palm);
     }
 
-    // Stadtboden mit Neon-Raster (nur an Land)
-    const ground = mesh(new THREE.PlaneGeometry(400, 220).rotateX(-Math.PI / 2), metal("#120a24", 0.5, 0.6), { receive: true });
-    ground.position.set(0, GROUND_Y - 0.02, SHORE_Z + 3 + 110);
-    world.add(ground);
-    const gridPts = [];
-    for (let x = -120; x <= 120; x += 2) gridPts.push(x, 0, SHORE_Z + 3, x, 0, 120);
-    for (let z = SHORE_Z + 3; z <= 120; z += 2) gridPts.push(-120, 0, z, 120, 0, z);
-    const gridGeo = new THREE.BufferGeometry();
-    gridGeo.setAttribute("position", new THREE.Float32BufferAttribute(gridPts, 3));
-    const gridLines = new THREE.LineSegments(gridGeo, new THREE.LineBasicMaterial({ color: "#7a2a9a", transparent: true, opacity: 0.6 }));
-    gridLines.position.y = GROUND_Y - 0.005;
-    world.add(gridLines);
-
-    // Zufahrtsstraßen aus der Stadt zu den Portalen und vom Tor weg
-    for (const [x0, x1, z] of [[-70, -COLS / 2 - 0.4, tileZ(2)], [-70, -COLS / 2 - 0.4, tileZ(10)], [COLS / 2 + 2.4, 70, tileZ(9)]]) {
-      const pts = [{ x: x0, z }, { x: x1, z }];
-      world.add(mesh(ribbon(pts, 0, 1.2, GROUND_Y + 0.01), metal("#191a2c", 0.3, 0.7), { receive: true }));
-      for (const side of [-1, 1]) world.add(mesh(ribbon(pts, side * 0.58, 0.05, GROUND_Y + 0.015), neon("#ff3cac", 2)));
-    }
-
-    // Hochhäuser im Westen, Osten und (niedrig) im Süden
-    const winTex = [0, 1, 2, 3, 4].map((i) => windowTexture(100 + i));
-    const ledColors = ["#29e6ff", "#ff3cac", "#b388ff", "#ffd740", "#ff8a5c"];
-    const roofLights = [];
-    const buildings = [];
-    const streetZ = [tileZ(2), tileZ(10)];
-    let tries = 0;
-    while (buildings.length < 85 && tries < 4000) {
-      tries++;
-      const x = (rng() - 0.5) * 90;
-      const z = SHORE_Z + 2.5 + rng() * 38;
-      const w = 1 + rng() * 1.8;
-      const d = 1 + rng() * 1.8;
-      if (Math.abs(x) < COLS / 2 + 1.2 + w / 2 && z < ROWS / 2 + 1.2 + d / 2) continue;
-      if (x < 0 && streetZ.some((sz) => Math.abs(z - sz) < 0.9 + d / 2)) continue;
-      if (x > 0 && Math.abs(z - tileZ(9)) < 0.9 + d / 2) continue;
-      if (x > 10 && x < 14.5 && Math.abs(z - tileZ(9)) < 3) continue;
-      if (Math.abs(x) < 20 && z < -7.5) continue;
-      if (buildings.some((b) => Math.abs(b.x - x) < (b.w + w) / 2 + 0.3 && Math.abs(b.z - z) < (b.d + d) / 2 + 0.3)) continue;
-      let h;
-      if (z > ROWS / 2 + 1 && Math.abs(x) < 16) h = 0.6 + rng() * 1.2; // vorne niedrig, damit die Sicht frei bleibt
-      else h = 2 + rng() * 8 * Math.min(1, Math.abs(x) / 25 + 0.3);
-      buildings.push({ x, z, w, d, h });
-    }
-    for (const b of buildings) {
-      const style = rng();
-      const tex = winTex[Math.floor(rng() * winTex.length)].clone();
-      tex.needsUpdate = true;
-      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-      tex.repeat.set(Math.max(1, Math.round(b.w)), Math.max(1, Math.round(b.h / 2)));
-      const bm = new THREE.MeshStandardMaterial({
-        color: "#1d1433", metalness: 0.85, roughness: 0.28, emissive: "#ffffff", emissiveMap: tex, emissiveIntensity: 1.1,
-      });
-      const g = new THREE.Group();
-      g.position.set(b.x, GROUND_Y, b.z);
-      let topY = b.h;
-      if (style < 0.3) {
-        const r = Math.min(b.w, b.d) / 2;
-        const tower = mesh(new THREE.CylinderGeometry(r * 0.9, r, b.h, 16), bm);
-        tower.position.y = b.h / 2;
-        g.add(tower);
-        for (let y = 0.6; y < b.h; y += 1.2 + rng()) {
-          const ring = mesh(new THREE.TorusGeometry(r * 0.97, 0.025, 6, 24).rotateX(Math.PI / 2), neon(ledColors[Math.floor(rng() * 5)], 2.2));
-          ring.position.y = y;
-          g.add(ring);
-        }
-      } else if (style < 0.75) {
-        // Retro-Block mit LED-Kanten
-        const tower = mesh(new THREE.BoxGeometry(b.w, b.h, b.d), bm);
-        tower.position.y = b.h / 2;
-        g.add(tower);
-        const led = ledColors[Math.floor(rng() * 5)];
-        for (const [sx, sz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
-          if (rng() < 0.4) continue;
-          const strip = mesh(G("ledStrip", () => new THREE.BoxGeometry(0.05, 1, 0.05)), neon(led, 2.4));
-          strip.scale.y = b.h;
-          strip.position.set(sx * b.w / 2, b.h / 2, sz * b.d / 2);
-          g.add(strip);
-        }
-        const roofBand = mesh(new THREE.BoxGeometry(b.w + 0.04, 0.06, b.d + 0.04), neon(led, 2));
-        roofBand.position.y = b.h;
-        g.add(roofBand);
-      } else {
-        // Stufenturm
-        let y = 0;
-        let w = b.w;
-        let d = b.d;
-        const parts = 2 + Math.floor(rng() * 2);
-        for (let i = 0; i < parts; i++) {
-          const ph = (b.h / parts) * (1 - i * 0.1);
-          const part = mesh(new THREE.BoxGeometry(w, ph, d), bm);
-          part.position.y = y + ph / 2;
-          g.add(part);
-          const band = mesh(new THREE.BoxGeometry(w + 0.04, 0.06, d + 0.04), neon(ledColors[(i + Math.abs(Math.floor(b.x))) % 5], 2));
-          band.position.y = y + ph;
-          g.add(band);
-          y += ph;
-          w *= 0.72;
-          d *= 0.72;
-        }
-        topY = y;
-      }
-      if (rng() < 0.5) {
-        const ah = 0.4 + rng() * 1.2;
-        const ant = mesh(G("antenna", () => new THREE.CylinderGeometry(0.015, 0.03, 1, 5)), metal("#b0b8d0", 0.3, 1));
-        ant.scale.y = ah;
-        ant.position.y = topY + ah / 2;
-        g.add(ant);
-        const light = mesh(G("antLight", () => new THREE.SphereGeometry(0.06, 8, 6)), neon("#ff2a4a", 3));
-        light.position.y = topY + ah;
-        g.add(light);
-        roofLights.push({ light, phase: rng() * 6 });
-      }
-      world.add(g);
-    }
-    animated.push({
-      static: true,
-      fn: (t) => {
-        for (const r of roofLights) r.light.visible = Math.sin(t * 2.5 + r.phase) > 0.2;
-      },
-    });
-
-    // Holo-Werbetafeln über der Stadt
-    const ads = [
-      [["NEO-CITY", "✦ SUNSET DISTRICT ✦"], "#ff3cac", "#ffd740", -15, 4.5, -3],
-      [["SYNTH-NUDELN", "24/7 · GALAXIS-GEWÜRZ"], "#ffd740", "#ff3cac", 15.5, 4, -2],
-      [["DEFEND", "DAS STADTTOR"], "#29e6ff", "#b388ff", 16, 5, 7],
-      [["HYPERLOOP", "→ ORBIT 3"], "#ff8a5c", "#29e6ff", -16, 5, 7],
-    ];
-    for (const [lines, a, b, x, y, z] of ads) {
-      const board = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 1.7), new THREE.MeshBasicMaterial({
-        map: holoTexture(lines, a, b), transparent: true, side: THREE.DoubleSide, depthWrite: false,
-      }));
-      board.position.set(x, y, z);
-      board.lookAt(0, y * 0.5, z + 6);
-      const pole = mesh(G("adPole", () => new THREE.CylinderGeometry(0.05, 0.05, 1, 6)), metal("#9098b8", 0.3, 1));
-      pole.scale.y = y - GROUND_Y - 0.8;
-      pole.position.set(x, (y + GROUND_Y - 0.8) / 2, z);
-      world.add(board, pole);
-      const phase = rng() * 10;
-      animated.push({
-        static: true,
-        fn: (t) => {
-          const flicker = Math.sin(t * 13 + phase) > 0.97 ? 0.35 : 1;
-          board.material.opacity = (0.82 + Math.sin(t * 2 + phase) * 0.08) * flicker;
-          board.position.y = y + Math.sin(t * 0.8 + phase) * 0.06;
-        },
-      });
-    }
-
-    // Fliegende Autos über der Stadt
-    const carCount = 34;
-    const carBody = new THREE.InstancedMesh(G("car", () => new THREE.CapsuleGeometry(0.09, 0.32, 4, 10).rotateZ(Math.PI / 2)), chrome("#ffffff", 0.15), carCount);
-    const carLight = new THREE.InstancedMesh(G("carLight", () => new THREE.SphereGeometry(0.06, 8, 6)), new THREE.MeshBasicMaterial(), carCount * 2);
-    const cars = [];
-    const carColors = ["#ff3cac", "#29e6ff", "#ffd740", "#b388ff", "#ff8a5c"];
-    for (let i = 0; i < carCount; i++) {
-      // Bahnen entlang der Stadtstraßen (West/Ost) in verschiedenen Höhen
-      const side = i % 2 ? 1 : -1;
-      cars.push({
-        x: side * (13 + rng() * 25), z0: SHORE_Z + 3, z1: 35, y: 2.5 + rng() * 5,
-        speed: (0.03 + rng() * 0.05) * (rng() < 0.5 ? 1 : -1), phase: rng(), color: carColors[i % carColors.length],
-      });
-      carBody.setColorAt(i, tmpColor.set(i % 3 === 0 ? "#ffd6f5" : i % 3 === 1 ? "#d6f7ff" : "#ffffff"));
-      carLight.setColorAt(i * 2, tmpColor.set(cars[i].color).multiplyScalar(2.5));
-      carLight.setColorAt(i * 2 + 1, tmpColor.set("#ffffff").multiplyScalar(2));
-    }
-    carBody.frustumCulled = carLight.frustumCulled = false;
-    world.add(carBody, carLight);
-    tmpQuat.setFromAxisAngle(tmpPos.set(0, 1, 0), Math.PI / 2);
-    const carQuat = tmpQuat.clone();
-    animated.push({
-      static: true,
-      fn: (t) => {
-        cars.forEach((c, i) => {
-          const k = (((c.phase + t * c.speed) % 1) + 1) % 1;
-          const z = c.z0 + (c.z1 - c.z0) * k;
-          const dir = Math.sign(c.speed);
-          tmpMatrix.compose(tmpPos.set(c.x, c.y, z), carQuat, tmpScale.set(1, 1, 1));
-          carBody.setMatrixAt(i, tmpMatrix);
-          tmpMatrix.makeTranslation(c.x, c.y, z - dir * 0.25);
-          carLight.setMatrixAt(i * 2, tmpMatrix);
-          tmpMatrix.makeTranslation(c.x, c.y, z + dir * 0.26);
-          carLight.setMatrixAt(i * 2 + 1, tmpMatrix);
-        });
-        carBody.instanceMatrix.needsUpdate = true;
-        carLight.instanceMatrix.needsUpdate = true;
-      },
-    });
+    // Die Stadt im Retro-Miami-Stil (Straßen, Autos, Art-déco, Hochhäuser, Strand)
+    world.add(City.build({
+      G, mesh, chrome, metal, neon, windowTexture, canvasTexture, makePalm, GROUND_Y, SHORE_Z,
+      animate: (fn) => animated.push({ static: true, fn }),
+      signTexture: (text, color) => canvasTexture(256, 128, (g, w, h) => {
+        g.clearRect(0, 0, w, h);
+        g.font = "bold 64px 'Brush Script MT', cursive, system-ui";
+        g.textAlign = "center";
+        g.textBaseline = "middle";
+        g.shadowColor = color;
+        g.shadowBlur = 18;
+        g.fillStyle = color;
+        g.fillText(text, w / 2, h / 2);
+        g.shadowBlur = 0;
+        g.fillStyle = "#ffffff";
+        g.globalAlpha = 0.85;
+        g.fillText(text, w / 2, h / 2);
+      }),
+      stripeMat: (color) => cached(`umbStripe${color}`, () => new THREE.MeshStandardMaterial({
+        map: canvasTexture(64, 8, (g, w, h) => {
+          for (let i = 0; i < 8; i++) {
+            g.fillStyle = i % 2 ? "#ffffff" : color;
+            g.fillRect((i * w) / 8, 0, w / 8, h);
+          }
+        }),
+        roughness: 0.7, side: THREE.DoubleSide,
+      })),
+    }));
   }
 
   // Palme als Silhouette mit leicht leuchtenden Blättern
