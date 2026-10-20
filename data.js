@@ -23,11 +23,51 @@ const PATHS = [
 // Röhren-Tunnel: Aliens werden eingesaugt, schrumpfen und sind darin unverwundbar
 const TUNNEL = { col: 12, rowFrom: 5, rowTo: 9 };
 
-// Seen mit Uferpromenade: hier kann niemals gebaut werden
-const POOLS = [
-  [[7, 2], [8, 2], [9, 2], [7, 3], [8, 3], [9, 3], [8, 4]],
-  [[22, 9], [23, 9], [22, 10], [23, 10], [22, 11]],
+// Seen mit glatter, runder Form (in Feld-Einheiten). Rundherum führt ein schmaler Uferweg.
+// Alle Felder, die See oder Weg berühren, sind gesperrt.
+const LAKES = [
+  { x: 8.5, y: 3.0, rx: 1.75, ry: 1.2, rot: 0.12, wob: 0.6 },
+  { x: 22.6, y: 10.3, rx: 0.9, ry: 1.5, rot: -0.05, wob: 2.1 },
 ];
+const LAKE_PATH = { inner: 0.14, outer: 0.42 }; // Uferweg: Abstand vom Wasser (innen/außen)
+
+// Punkt auf dem Seeufer bei Winkel a, um "extra" Felder nach außen versetzt
+function lakePoint(lake, a, extra = 0) {
+  const k = 1 + 0.06 * Math.sin(2 * a + lake.wob) + 0.035 * Math.sin(3 * a + lake.wob * 1.7);
+  const lx = Math.cos(a) * (lake.rx * k + extra);
+  const ly = Math.sin(a) * (lake.ry * k + extra);
+  const c = Math.cos(lake.rot);
+  const s = Math.sin(lake.rot);
+  return { x: lake.x + lx * c - ly * s, y: lake.y + lx * s + ly * c };
+}
+
+// Liegt ein Punkt (Feld-Einheiten) innerhalb des Sees plus Rand "extra"?
+function insideLake(lake, x, y, extra = 0) {
+  const dx = x - lake.x;
+  const dy = y - lake.y;
+  const c = Math.cos(-lake.rot);
+  const s = Math.sin(-lake.rot);
+  const lx = dx * c - dy * s;
+  const ly = dx * s + dy * c;
+  const a = Math.atan2(ly / lake.ry, lx / lake.rx);
+  const p = lakePoint({ ...lake, x: 0, y: 0, rot: 0 }, a, extra);
+  return Math.hypot(lx, ly) <= Math.hypot(p.x, p.y);
+}
+
+// Gesperrte Felder: jedes Feld, das See oder Uferweg berührt
+const POOLS = LAKES.map((lake) => {
+  const tiles = [];
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      let hit = false;
+      for (let i = 0; i <= 4 && !hit; i++) {
+        for (let k = 0; k <= 4 && !hit; k++) hit = insideLake(lake, c + i / 4, r + k / 4, LAKE_PATH.outer + 0.04);
+      }
+      if (hit) tiles.push([c, r]);
+    }
+  }
+  return tiles;
+});
 
 // Stadttor am Ende des Weges (hier starten auch die Raumschiffe)
 const GATE_TILES = [[23, 4], [23, 6]];

@@ -67,7 +67,7 @@ function saveSettings() {
 }
 
 // ---------- Karte ----------
-// grid[row][col]: "pad" | "path" | "tunnel" | "pool" | "plaza" | "gate" | Gebäude (Schlüssel aus OBSTACLES)
+// grid[row][col]: "pad" | "path" | "tunnel" | "pool" | "gate" | Gebäude (Schlüssel aus OBSTACLES)
 let grid;
 let variant; // Zufallswert je Feld für unterschiedliches Aussehen
 
@@ -88,16 +88,6 @@ function buildGrid() {
     if (inGrid(c, r)) grid[r][c] = tunnelTiles.has(key) ? "tunnel" : "path";
   }
   for (const pool of POOLS) for (const [c, r] of pool) grid[r][c] = "pool";
-  // Uferpromenade rund um die Seen
-  for (const pool of POOLS) {
-    for (const [c, r] of pool) {
-      for (let dr = -1; dr <= 1; dr++) {
-        for (let dc = -1; dc <= 1; dc++) {
-          if (inGrid(c + dc, r + dr) && grid[r + dr][c + dc] === "pad") grid[r + dr][c + dc] = "plaza";
-        }
-      }
-    }
-  }
   for (const [c, r] of GATE_TILES) grid[r][c] = "gate";
 
   const near = (c, r, type) => {
@@ -118,7 +108,7 @@ function buildGrid() {
       const r = Math.floor(rng() * ROWS);
       if (grid[r][c] !== "pad") continue;
       if ((near(c, r, "path") || near(c, r, "tunnel")) && rng() < 0.75) continue;
-      if (!near(c, r, "plaza") && rng() < 0.45) continue;
+      if (!near(c, r, "pool") && rng() < 0.45) continue;
       grid[r][c] = kind;
       placed++;
     }
@@ -1603,8 +1593,7 @@ function handleTileClick(col, row, keepBuilding = false, px, py) {
       setInfo(`${TOWER_TYPES[state.selectedType].name} gebaut. Klicke auf den Turm, um ihn zu verbessern.`);
     }
   } else if (state.buildMode) setInfo("Ein Turm braucht 2×2 freie Felder.");
-  else if (cell === "pool") setInfo("Im See kann nicht gebaut werden.");
-  else if (cell === "plaza") setInfo("Die Uferpromenade bleibt frei.");
+  else if (cell === "pool") setInfo("Am See und auf dem Uferweg kann nicht gebaut werden.");
   else if (cell === "tunnel") setInfo("Im Röhren-Tunnel schrumpfen die Aliens und sind unverwundbar.");
   else if (cell === "gate") setInfo("Das ist dein Stadttor – verteidige es!");
   else setInfo("Wähle unten einen Turm aus, um zu bauen.");

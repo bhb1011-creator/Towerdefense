@@ -972,29 +972,41 @@ const View = (() => {
     roadDashes.frustumCulled = false;
     mapGroup.add(roadDashes);
 
-    // Energieseen: jeweils eine zusammenhängende, organische Fläche
-    const poolMask = canvasTexture(512, Math.round(512 * (ROWS + FLOOR_MARGIN * 2) / (COLS + FLOOR_MARGIN * 2)), (g, w, h) => {
+    // Seen mit glatter Uferlinie: Maske mit Rot = Wasser, Grün = Rasen (halb) / Uferweg (voll), Blau = Kanten
+    const poolMask = canvasTexture(2048, Math.round(2048 * (ROWS + FLOOR_MARGIN * 2) / (COLS + FLOOR_MARGIN * 2)), (g, w) => {
       g.fillStyle = "#000000";
-      g.fillRect(0, 0, w, h);
+      g.fillRect(0, 0, w, w);
       g.globalCompositeOperation = "lighter";
       const ppt = w / (COLS + FLOOR_MARGIN * 2);
-      // Rot = Wasser, Grün = Uferpromenade (Wasser und Promenadenfelder)
-      const blob = (c, r, rad, color) => {
-        const x = (c + 0.5 + FLOOR_MARGIN) * ppt;
-        const y = (r + 0.5 + FLOOR_MARGIN) * ppt;
-        const grad = g.createRadialGradient(x, y, 0, x, y, ppt * rad);
-        grad.addColorStop(0, `rgba(${color},1)`);
-        grad.addColorStop(1, `rgba(${color},0)`);
-        g.fillStyle = grad;
-        g.fillRect(x - ppt * rad, y - ppt * rad, ppt * rad * 2, ppt * rad * 2);
+      const shape = (lake, extra) => {
+        g.beginPath();
+        for (let i = 0; i <= 160; i++) {
+          const p = lakePoint(lake, (i / 160) * Math.PI * 2, extra);
+          g[i ? "lineTo" : "moveTo"]((p.x + FLOOR_MARGIN) * ppt, (p.y + FLOOR_MARGIN) * ppt);
+        }
+        g.closePath();
       };
-      for (let r = 0; r < ROWS; r++) {
-        for (let c = 0; c < COLS; c++) {
-          if (grid[r][c] === "plaza" || grid[r][c] === "pool") blob(c, r, 1.0, "0,255,0");
+      const mid = (LAKE_PATH.inner + LAKE_PATH.outer) / 2;
+      for (const lake of LAKES) {
+        shape(lake, LAKE_PATH.inner);
+        g.fillStyle = "rgb(0,120,0)";
+        g.fill();
+        shape(lake, 0);
+        g.fillStyle = "rgb(255,0,0)";
+        g.fill();
+        shape(lake, mid);
+        g.strokeStyle = "rgb(0,255,0)";
+        g.lineWidth = (LAKE_PATH.outer - LAKE_PATH.inner) * ppt;
+        g.stroke();
+        g.strokeStyle = "rgb(0,0,255)";
+        g.lineWidth = 0.035 * ppt;
+        for (const ex of [0, LAKE_PATH.inner, LAKE_PATH.outer]) {
+          shape(lake, ex);
+          g.stroke();
         }
       }
-      for (const pool of POOLS) for (const [c, r] of pool) blob(c, r, 0.95, "255,0,0");
     });
+    poolMask.anisotropy = 8;
     const poolMat = new THREE.ShaderMaterial({
       transparent: true,
       depthWrite: false,
@@ -1007,21 +1019,34 @@ const View = (() => {
         void main(){
           vec4 mk = texture2D(mask, vUv);
           float m = mk.r;
+          float edge = mk.b;
           if (m < 0.5) {
             float pr = mk.g;
-            if (pr < 0.45) discard;
-            // Uferpromenade: helle Steinplatten mit Fugen und leuchtender Bordkante
-            vec2 q = vUv * tiles * 3.0;
-            vec2 f = abs(fract(q) - 0.5);
-            float joint = smoothstep(0.47, 0.5, max(f.x, f.y));
-            float n = fract(sin(dot(floor(q), vec2(12.9898, 78.233))) * 43758.5453);
-            vec3 stone = mix(vec3(0.27, 0.2, 0.36), vec3(0.38, 0.29, 0.46), n);
-            stone = mix(stone, vec3(0.1, 0.06, 0.16), joint * 0.8);
-            float curb = 1.0 - smoothstep(0.46, 0.5, pr);
-            stone = mix(stone, vec3(1.0, 0.35, 0.8) * 1.3, curb);
-            float wet = smoothstep(0.38, 0.5, m);
-            stone = mix(stone, vec3(0.6, 1.0, 1.0) * 1.2, wet);
-            gl_FragColor = vec4(stone, 1.0);
+            if (pr < 0.25 && edge < 0.35) discard;
+            vec3 col;
+            if (edge > 0.35) {
+              // leuchtende Kante des Uferwegs
+              col = vec3(1.0, 0.4, 0.85) * 1.5;
+            } else if (pr > 0.75) {
+              // schmaler Weg aus kleinen hellen Pflastersteinen
+              vec2 q = vUv * tiles * 9.0;
+              q.x += floor(q.y) * 0.5;
+              vec2 f = abs(fract(q) - 0.5);
+              float joint = smoothstep(0.42, 0.5, max(f.x, f.y));
+              float n = fract(sin(dot(floor(q), vec2(12.9898, 78.233))) * 43758.5453);
+              col = mix(vec3(0.5, 0.4, 0.55), vec3(0.62, 0.5, 0.62), n);
+              col = mix(col, vec3(0.16, 0.1, 0.2), joint * 0.8);
+            } else {
+              // Rasenstreifen zwischen Wasser und Weg
+              vec2 q = vUv * tiles * 14.0;
+              float n = fract(sin(dot(floor(q), vec2(41.3, 17.9))) * 9134.21);
+              col = mix(vec3(0.03, 0.18, 0.16), vec3(0.06, 0.3, 0.24), n);
+            }
+            gl_FragColor = vec4(col, 1.0);
+            return;
+          }
+          if (edge > 0.35) {
+            gl_FragColor = vec4(vec3(0.85, 1.0, 1.0) * 1.7, 1.0);
             return;
           }
           vec2 p = vUv * vec2(26.0, 16.0);
@@ -1031,8 +1056,6 @@ const View = (() => {
           vec3 c = mix(deep, bright, 0.5 + 0.5 * sin(w * 1.6));
           float caustic = pow(max(0.0, sin(w * 3.0 + time)), 8.0);
           c += vec3(0.8, 1.0, 1.0) * caustic * 0.6;
-          float rim = 1.0 - smoothstep(0.5, 0.62, m);
-          c = mix(c, vec3(0.85, 1.0, 1.0) * 1.6, rim);
           gl_FragColor = vec4(c, 1.0);
         }`,
     });
@@ -1041,27 +1064,30 @@ const View = (() => {
     pools.position.y = FLOOR_Y + 0.006;
     mapGroup.add(pools);
     animated.push({ fn: (t) => { poolMat.uniforms.time.value = t; } });
-    for (const pool of POOLS) {
-      for (const [c, r] of pool) {
-        // aufsteigende Energieblasen
-        for (let i = 0; i < 2; i++) {
-          const bubble = glowSprite("#7affea", 0.18);
-          const ox = (rng() - 0.5) * 0.7;
-          const oz = (rng() - 0.5) * 0.7;
-          const ph = rng();
-          mapGroup.add(bubble);
-          animated.push({
-            fn: (t) => {
-              const k = (t * 0.35 + ph) % 1;
-              bubble.position.set(tileX(c) + ox, FLOOR_Y + k * 0.8, tileZ(r) + oz);
-              bubble.material.opacity = 1 - k;
-            },
-          });
-        }
+    // aufsteigende Energieblasen über dem Wasser
+    for (const lake of LAKES) {
+      for (let i = 0; i < Math.round(lake.rx * lake.ry * 4); i++) {
+        let x;
+        let y;
+        do {
+          x = lake.x + (rng() - 0.5) * lake.rx * 2;
+          y = lake.y + (rng() - 0.5) * lake.ry * 2;
+        } while (!insideLake(lake, x, y, -0.2));
+        const bubble = glowSprite("#7affea", 0.18);
+        const ph = rng();
+        mapGroup.add(bubble);
+        animated.push({
+          fn: (t) => {
+            const k = (t * 0.35 + ph) % 1;
+            bubble.position.set(x - COLS / 2, FLOOR_Y + k * 0.8, y - ROWS / 2);
+            bubble.material.opacity = 1 - k;
+          },
+        });
       }
+      mapGroup.add(makeLakeDecor(lake, rng));
     }
 
-    // Gebäude (Hindernisse) und Deko auf der Uferpromenade
+    // Gebäude (Hindernisse)
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
         const t = grid[r][c];
@@ -1070,8 +1096,6 @@ const View = (() => {
           obj.position.set(tileX(c), PAD_TOP, tileZ(r));
           obstacleMeshes.set(`${c},${r}`, obj);
           mapGroup.add(obj);
-        } else if (t === "plaza") {
-          mapGroup.add(makePlazaProp(c, r, variant[r][c], rng));
         }
       }
     }
@@ -1377,39 +1401,88 @@ const View = (() => {
     return { map, rough, glow };
   }
 
-  // Deko auf der Uferpromenade: Bänke, Laternen, kleine Palmen
-  function makePlazaProp(c, r, v, rng) {
+  // Uferweg-Deko: Laternen in gleichen Abständen, dazwischen Bänke mit Blick aufs Wasser
+  function makeLakeDecor(lake, rng) {
     const g = new THREE.Group();
-    g.position.set(tileX(c) + (rng() - 0.5) * 0.3, PAD_TOP, tileZ(r) + (rng() - 0.5) * 0.3);
-    if (v < 0.3) {
-      const bench = mesh(G("bench", () => new THREE.RoundedBoxGeometry(0.42, 0.05, 0.14, 2, 0.02)), chrome("#ff9ad5", 0.25, 0.4), { cast: true });
-      bench.position.y = 0.12;
-      const back = mesh(G("benchBack", () => new THREE.RoundedBoxGeometry(0.42, 0.12, 0.03, 2, 0.012)), chrome("#ff9ad5", 0.25, 0.4), { cast: true });
-      back.position.set(0, 0.2, -0.06);
-      for (const s of [-1, 1]) {
-        const leg = mesh(G("benchLeg", () => new THREE.BoxGeometry(0.03, 0.12, 0.12)), metal("#d8dcff", 0.3, 1));
-        leg.position.set(s * 0.17, 0.06, 0);
-        g.add(leg);
+    const edge = LAKE_PATH.outer + 0.07;
+    // Punkte entlang des Weges nach Weglänge verteilen
+    const pts = [];
+    const cum = [0];
+    for (let i = 0; i <= 400; i++) {
+      const p = lakePoint(lake, (i / 400) * Math.PI * 2, edge);
+      if (i) cum.push(cum[i - 1] + Math.hypot(p.x - pts[i - 1].x, p.y - pts[i - 1].y));
+      pts.push(p);
+    }
+    const total = cum[400];
+    const at = (d) => {
+      d = ((d % total) + total) % total;
+      let i = 1;
+      while (i < 400 && cum[i] < d) i++;
+      const a = pts[i - 1];
+      const b = pts[i];
+      const k = (d - cum[i - 1]) / (cum[i] - cum[i - 1] || 1);
+      // Normale nach außen (weg vom See)
+      const tx = b.x - a.x;
+      const ty = b.y - a.y;
+      const len = Math.hypot(tx, ty) || 1;
+      let nx = ty / len;
+      let ny = -tx / len;
+      const px = a.x + tx * k;
+      const py = a.y + ty * k;
+      if ((px - lake.x) * nx + (py - lake.y) * ny < 0) {
+        nx = -nx;
+        ny = -ny;
       }
-      g.add(bench, back);
-      g.rotation.y = Math.floor(v * 13) * (Math.PI / 2);
-    } else if (v < 0.6) {
-      const pole = mesh(G("plazaPole", () => new THREE.CylinderGeometry(0.015, 0.025, 0.7, 6)), metal("#e8ecff", 0.25, 1), { cast: true });
-      pole.position.y = 0.35;
-      const lamp = mesh(G("plazaLamp", () => new THREE.SphereGeometry(0.06, 12, 8)), neon(v < 0.45 ? "#ff8ad8" : "#7af3ff", 2.6));
-      lamp.position.y = 0.72;
-      const halo = glowSprite(v < 0.45 ? "#ff8ad8" : "#7af3ff", 0.5);
-      halo.position.y = 0.72;
-      g.add(pole, lamp, halo);
-    } else if (v < 0.78) {
-      g.add(makePalm(rng, 0.7 + rng() * 0.4, false));
-    } else {
-      // Blumenkübel
-      const pot = mesh(G("pot", () => new THREE.CylinderGeometry(0.1, 0.08, 0.14, 12)), chrome("#8ae8ff", 0.2, 0.5), { cast: true });
-      pot.position.y = 0.07;
-      const flowers = mesh(G("flowers", () => new THREE.IcosahedronGeometry(0.1, 1)), neon("#ff4fd8", 0.8));
-      flowers.position.y = 0.18;
-      g.add(pot, flowers);
+      return { x: px, y: py, nx, ny };
+    };
+    const lampCount = Math.max(6, Math.round(total / 1.15));
+    const step = total / lampCount;
+    const lampColors = ["#ff8ad8", "#7af3ff"];
+    for (let i = 0; i < lampCount; i++) {
+      const p = at(i * step);
+      const lamp = new THREE.Group();
+      lamp.position.set(p.x - COLS / 2, PAD_TOP, p.y - ROWS / 2);
+      const pole = mesh(G("lakePole", () => new THREE.CylinderGeometry(0.014, 0.022, 0.62, 8)), metal("#e8ecff", 0.25, 1), { cast: true });
+      pole.position.y = 0.31;
+      const cap = mesh(G("lakeLampCap", () => new THREE.ConeGeometry(0.06, 0.05, 12)), chrome("#f4f6ff", 0.1));
+      cap.position.y = 0.7;
+      const globe = mesh(G("lakeLamp", () => new THREE.SphereGeometry(0.05, 12, 8)), neon(lampColors[i % 2], 2.6));
+      globe.position.y = 0.64;
+      const halo = glowSprite(lampColors[i % 2], 0.45);
+      halo.position.y = 0.64;
+      lamp.add(pole, cap, globe, halo);
+      g.add(lamp);
+      // Bank genau zwischen zwei Laternen, an jeder zweiten Lücke, Blick zum Wasser
+      if (i % 2 === 0) {
+        const q = at(i * step + step / 2);
+        const bench = new THREE.Group();
+        bench.position.set(q.x - COLS / 2, PAD_TOP, q.y - ROWS / 2);
+        bench.rotation.y = Math.atan2(-q.nx, -q.ny);
+        const seat = mesh(G("bench", () => new THREE.RoundedBoxGeometry(0.34, 0.04, 0.12, 2, 0.015)), chrome("#ffd0f0", 0.2, 0.5), { cast: true });
+        seat.position.y = 0.11;
+        const back = mesh(G("benchBack", () => new THREE.RoundedBoxGeometry(0.34, 0.1, 0.025, 2, 0.01)), chrome("#ffd0f0", 0.2, 0.5), { cast: true });
+        back.position.set(0, 0.18, -0.055);
+        back.rotation.x = -0.15;
+        bench.add(seat, back);
+        for (const sx of [-1, 1]) {
+          const leg = mesh(G("benchLeg", () => new THREE.BoxGeometry(0.025, 0.11, 0.1)), metal("#d8dcff", 0.3, 1));
+          leg.position.set(sx * 0.14, 0.055, 0);
+          bench.add(leg);
+        }
+        g.add(bench);
+      }
+    }
+    // Palmen in den gesperrten Ecken außerhalb des Weges
+    for (let i = 1; i < lampCount; i += 2) {
+      const p = at(i * step + step / 2);
+      const x = p.x + p.nx * 0.32;
+      const y = p.y + p.ny * 0.32;
+      const c = Math.floor(x);
+      const r = Math.floor(y);
+      if (c < 0 || c >= COLS || r < 0 || r >= ROWS || grid[r][c] !== "pool") continue;
+      const palm = makePalm(rng, 0.8 + rng() * 0.3, false);
+      palm.position.set(x - COLS / 2, PAD_TOP, y - ROWS / 2);
+      g.add(palm);
     }
     return g;
   }
@@ -1781,225 +1854,56 @@ const View = (() => {
   }
 
   // ---------- Gegner ----------
-  function bodyMaterial(color, opts = {}) {
-    const m = new THREE.MeshStandardMaterial({ color, metalness: 0.85, roughness: 0.2, ...opts });
-    return m;
-  }
-
-  // Modell einer Stufen-Drohne. Wird neu gebaut, wenn sich Stufe oder Eigenschaften ändern.
-  function buildDroneModel(e, ud) {
-    const lv = DRONE_LEVELS[e.level];
-    const r = (lv.radius / TILE) * 1.55;
+  // Alien-Modell bauen. Wird neu gebaut, wenn sich Stufe oder Eigenschaften ändern.
+  // Größe in Feldern: Stufe 1 klein, Bosse groß
+  const ALIEN_SCALE = { tank: 0.85, bossA: 1.15, bossB: 0.95 };
+  function buildAlienModel(e, ud) {
+    const color = e.kind === "drone" ? DRONE_LEVELS[e.level].color : HEAVY[e.kind].color;
+    const a = Aliens.build(e.kind, { level: e.level, color, props: e.props });
+    const scale = e.kind === "drone" ? (0.42 + e.level * 0.05) / 1.3 * (e.props.camo || e.props.blast ? 1.35 : 1) : ALIEN_SCALE[e.kind];
     const model = new THREE.Group();
-    const base = new THREE.Color(lv.color).lerp(new THREE.Color("#ffffff"), 0.3);
-    const p = e.props;
-    const bodyMat = bodyMaterial(base, p.shield ? { metalness: 1, roughness: 0.03, color: "#ffffff" } : { metalness: 0.45, roughness: 0.22 });
-    if (p.camo) {
-      bodyMat.transparent = true;
-      bodyMat.opacity = 0.35;
-    }
-    const body = mesh(G("sph24", () => new THREE.SphereGeometry(1, 24, 16)), bodyMat, { cast: !p.camo });
-    body.scale.setScalar(r);
-    body.position.y = r * 1.5;
-    body.userData.ownMaterial = true;
-    model.add(body);
-    const band = mesh(G("droneBand", () => new THREE.TorusGeometry(1.02, 0.12, 8, 32).rotateX(Math.PI / 2)), neon(lv.color, 2.4));
-    band.scale.setScalar(r);
-    band.position.y = r * 1.5;
-    const eye = mesh(G("sph12", () => new THREE.SphereGeometry(1, 12, 8)), ud.eyeMat);
-    eye.scale.set(r * 0.25, r * 0.22, r * 0.32);
-    eye.position.set(r * 0.88, r * 1.6, 0);
-    model.add(band, eye);
-    // Anzahl der kreisenden Satelliten = Stufe
-    const orbit = new THREE.Group();
-    orbit.position.y = r * 1.5;
-    for (let i = 0; i < e.level; i++) {
-      const sat = mesh(G("sph8", () => new THREE.SphereGeometry(1, 8, 6)), neon(lv.color, 3));
-      const a = (i / e.level) * Math.PI * 2;
-      sat.scale.setScalar(r * 0.16);
-      sat.position.set(Math.cos(a) * r * 1.55, 0, Math.sin(a) * r * 1.55);
-      orbit.add(sat);
-    }
-    model.add(orbit);
-    if (p.frost) {
-      const shell = mesh(G("ico0", () => new THREE.IcosahedronGeometry(1, 0)), cached("frostShell", () => new THREE.MeshPhysicalMaterial({
-        color: "#bfefff", transparent: true, opacity: 0.4, roughness: 0.05, metalness: 0.1, clearcoat: 1, flatShading: true, emissive: "#3fb6ff", emissiveIntensity: 0.4,
-      })));
-      shell.scale.setScalar(r * 1.35);
-      shell.position.y = r * 1.5;
-      const wire = mesh(G("ico0", () => new THREE.IcosahedronGeometry(1, 0)), basic("#e8fbff", { wireframe: true, transparent: true, opacity: 0.7 }));
-      wire.scale.setScalar(r * 1.36);
-      wire.position.y = r * 1.5;
-      model.add(shell, wire);
-    }
-    if (p.blast) {
-      const cap = mesh(G("hemi", () => new THREE.SphereGeometry(1, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2)), metal("#2a2a38", 0.45, 0.9), { cast: true });
-      cap.scale.set(r * 1.1, r * 0.8, r * 1.1);
-      cap.position.y = r * 1.62;
-      const rivets = mesh(G("rivetRing", () => new THREE.TorusGeometry(1.08, 0.1, 6, 12).rotateX(Math.PI / 2)), metal("#575770", 0.4, 1));
-      rivets.scale.setScalar(r);
-      rivets.position.y = r * 1.62;
-      model.add(cap, rivets);
-    }
-    if (p.shield) {
-      const prism = mesh(G("prismRing", () => new THREE.TorusGeometry(1.3, 0.06, 8, 40)), chrome("#ffffff", 0.02));
-      prism.scale.setScalar(r);
-      prism.position.y = r * 1.5;
-      model.add(prism);
-      ud.prism = prism;
-    } else ud.prism = null;
-    if (p.regen) {
-      const heal = mesh(G("healRing", () => new THREE.TorusGeometry(1.2, 0.08, 6, 32).rotateX(Math.PI / 2)), neon("#69f0ae", 2.6));
-      heal.scale.setScalar(r);
-      heal.position.y = 0.04;
-      model.add(heal);
-      ud.heal = heal;
-    } else ud.heal = null;
-    if (p.camo) {
-      const veil = mesh(G("sph16", () => new THREE.SphereGeometry(1, 16, 12)), basic("#9ff6ff", { wireframe: true, transparent: true, opacity: 0.25 }));
-      veil.scale.setScalar(r * 1.25);
-      veil.position.y = r * 1.5;
-      model.add(veil);
-    }
-    ud.bodyMat = bodyMat;
-    ud.baseColor = base;
-    ud.orbit = orbit;
-    ud.r = r;
-    return model;
-  }
-
-  function buildHeavyModel(e, ud) {
-    const h = HEAVY[e.kind];
-    const model = new THREE.Group();
-    const bodyMat = bodyMaterial(h.color);
-    ud.bodyMat = bodyMat;
-    ud.baseColor = new THREE.Color(h.color);
-    const addBreak = (m, at) => ud.breaks.push({ mesh: m, at, broken: false });
-    if (e.kind === "tank") {
-      const r = (h.radius / TILE) * 1.4;
-      ud.r = r;
-      const body = mesh(G("tankBody", () => new THREE.RoundedBoxGeometry(1.6, 0.9, 1.2, 3, 0.25)), bodyMat, { cast: true });
-      body.scale.setScalar(r);
-      body.position.y = r * 0.75;
-      body.userData.ownMaterial = true;
-      const core = mesh(G("sph12", () => new THREE.SphereGeometry(1, 12, 8)), ud.eyeMat);
-      core.scale.set(r * 0.18, r * 0.25, r * 0.4);
-      core.position.set(r * 0.82, r * 0.8, 0);
-      model.add(body, core);
-      for (let i = 0; i < 4; i++) {
-        const plate = mesh(G("plate", () => new THREE.RoundedBoxGeometry(1, 0.25, 1, 2, 0.1)), chrome("#c8cce8", 0.15));
-        plate.scale.set(r * 0.42, r * 0.5, r * 1.3);
-        plate.position.set((i - 1.5) * r * 0.42, r * 1.25, 0);
-        model.add(plate);
-        addBreak(plate, [0.8, 0.6, 0.4, 0.2][i]);
-      }
-      for (const s of [-1, 1]) {
-        const tread = mesh(G("tread", () => new THREE.CapsuleGeometry(0.2, 1.2, 4, 8).rotateZ(Math.PI / 2)), metal("#2a2d44", 0.4, 1));
-        tread.scale.setScalar(r);
-        tread.position.set(0, r * 0.25, s * r * 0.62);
-        model.add(tread);
-      }
-      const glow = glowSprite("#ff8a3d", r * 1.2);
-      glow.position.set(-r * 0.9, r * 0.8, 0);
-      model.add(glow);
-    } else if (e.kind === "bossA") {
-      const r = (h.radius / TILE) * 1.15;
-      ud.r = r;
-      const core = mesh(G("sph24", () => new THREE.SphereGeometry(1, 24, 16)), bodyMat, { cast: true });
-      core.scale.setScalar(r);
-      core.position.y = r * 1.4;
-      core.userData.ownMaterial = true;
-      model.add(core);
-      const eye = mesh(G("sph16", () => new THREE.SphereGeometry(1, 16, 12)), ud.eyeMat);
-      eye.scale.set(r * 0.25, r * 0.4, r * 0.4);
-      eye.position.set(r * 0.88, r * 1.45, 0);
-      model.add(eye);
-      ud.rings = [];
-      for (let i = 0; i < 2; i++) {
-        const ring = mesh(G("omegaRing", () => new THREE.TorusGeometry(1, 0.06, 10, 64)), chrome(i ? "#ffd6f5" : "#d6f7ff", 0.06), { cast: true });
-        ring.scale.setScalar(r * (1.45 + i * 0.25));
-        ring.position.y = r * 1.4;
-        ring.rotation.x = Math.PI / 2 + (i ? 0.45 : -0.3);
-        model.add(ring);
-        ud.rings.push(ring);
-      }
-      for (let i = 0; i < 8; i++) {
-        const node = mesh(G("sph12", () => new THREE.SphereGeometry(1, 12, 8)), neon(i % 2 ? "#ff4fd8" : "#29e6ff", 3));
-        const a = (i / 8) * Math.PI * 2;
-        node.scale.setScalar(0.12 / 1.45);
-        node.position.set(Math.cos(a), Math.sin(a), 0);
-        ud.rings[0].add(node);
-        addBreak(node, 0.95 - i * 0.11);
-      }
-      for (let i = 0; i < 6; i++) {
-        const spike = mesh(G("spike", () => new THREE.ConeGeometry(0.12, 0.6, 10)), chrome("#ffffff", 0.08));
-        spike.scale.setScalar(r);
-        const a = (i / 6) * Math.PI * 2;
-        spike.position.set(Math.cos(a) * r * 0.95, r * 1.4 + Math.sin(a) * r * 0.95, 0);
-        spike.rotation.z = a - Math.PI / 2;
-        model.add(spike);
-        addBreak(spike, 0.8 - i * 0.13);
-      }
-      const glow = glowSprite("#ff4fd8", r * 5);
-      glow.position.y = r * 1.4;
-      model.add(glow);
-      ud.glow = glow;
-    } else {
-      // Hyperion-Mutterschiff mit 4 Kapseln, in denen die Omega-Kolosse stecken
-      const r = (h.radius / TILE) * 0.9;
-      ud.r = r;
-      const hull = mesh(G("sph32", () => new THREE.SphereGeometry(1, 32, 16)), bodyMat, { cast: true });
-      hull.scale.set(r * 1.5, r * 0.45, r * 1.5);
-      hull.position.y = r * 1.2;
-      hull.userData.ownMaterial = true;
-      const dome = mesh(G("hemi", () => new THREE.SphereGeometry(1, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2)), chrome("#ffe6fb", 0.04));
-      dome.scale.setScalar(r * 0.7);
-      dome.position.y = r * 1.4;
-      const eye = mesh(G("sph16", () => new THREE.SphereGeometry(1, 16, 12)), ud.eyeMat);
-      eye.scale.setScalar(r * 0.22);
-      eye.position.y = r * 2.0;
-      model.add(hull, dome, eye);
-      const ring = mesh(G("motherRing", () => new THREE.TorusGeometry(1, 0.05, 10, 80).rotateX(Math.PI / 2)), neon("#ffd740", 2.6));
-      ring.scale.setScalar(r * 1.7);
-      ring.position.y = r * 1.2;
-      model.add(ring);
-      ud.rings = [ring];
-      ud.lights = new THREE.Group();
-      ud.lights.position.y = r * 1.1;
-      for (let i = 0; i < 16; i++) {
-        const l = mesh(G("sph8", () => new THREE.SphereGeometry(1, 8, 6)), neon(i % 2 ? "#ff3cac" : "#29e6ff", 3));
-        const a = (i / 16) * Math.PI * 2;
-        l.scale.setScalar(r * 0.06);
-        l.position.set(Math.cos(a) * r * 1.45, 0, Math.sin(a) * r * 1.45);
-        ud.lights.add(l);
-        addBreak(l, 0.98 - i * 0.06);
-      }
-      model.add(ud.lights);
-      for (let i = 0; i < 4; i++) {
-        const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
-        const pod = mesh(G("sph16", () => new THREE.SphereGeometry(1, 16, 12)), cached("podGlass", () => new THREE.MeshPhysicalMaterial({
-          color: "#ff8ae6", transparent: true, opacity: 0.45, roughness: 0.05, clearcoat: 1, emissive: "#ff3cac", emissiveIntensity: 0.6,
-        })));
-        pod.scale.setScalar(r * 0.42);
-        pod.position.set(Math.cos(a) * r * 1.05, r * 1.35, Math.sin(a) * r * 1.05);
-        const inner = mesh(G("sph16", () => new THREE.SphereGeometry(1, 16, 12)), chrome("#e0e6ff", 0.05));
-        inner.scale.setScalar(r * 0.26);
-        inner.position.copy(pod.position);
-        model.add(inner, pod);
-      }
-      const glow = glowSprite("#ffd740", r * 6);
-      glow.position.y = r * 1.2;
+    a.root.scale.setScalar(scale);
+    model.add(a.root);
+    const big = e.kind !== "drone";
+    a.root.traverse((o) => {
+      if (!o.isMesh) return;
+      if (!big) o.castShadow = false;
+      if (o.material === a.skin || o.material === a.eyeMat) o.userData.ownMaterial = true;
+    });
+    ud.alien = a;
+    ud.scale = scale;
+    ud.r = (a.height * scale) / 2.6;
+    ud.bodyMat = a.skin;
+    ud.baseColor = a.skin.color.clone();
+    ud.baseEmissive = (a.skin.userData.baseEmissive || new THREE.Color("#000000")).clone();
+    ud.baseEmissiveIntensity = a.skin.emissiveIntensity;
+    ud.eyeMat = a.eyeMat;
+    ud.eyeBase = a.eyeMat.emissive.clone();
+    ud.breaks = a.breaks.map((br) => ({ mesh: br.mesh, at: br.at, broken: false }));
+    if (e.kind === "bossA" || e.kind === "bossB") {
+      const glow = glowSprite(e.kind === "bossB" ? "#ff3cac" : "#b14dff", ud.r * 5);
+      glow.position.y = ud.r * 1.4;
       model.add(glow);
       ud.glow = glow;
     }
     return model;
+  }
+
+  // Schrumpfen am Tunnel: 1 = normal, im Tunnel sehr klein
+  function tunnelScale(e) {
+    const R = TUNNEL_RECT;
+    const dx = Math.max(R.x0 - e.x, 0, e.x - R.x1);
+    const dy = Math.max(R.y0 - e.y, 0, e.y - R.y1);
+    const d = Math.hypot(dx, dy) / TILE;
+    const inside = isBoss(e) ? 0.18 : 0.35;
+    const k = Math.min(1, d / 1.2);
+    return inside + (1 - inside) * k * k * (3 - 2 * k);
   }
 
   function makeEnemy(e) {
     const root = new THREE.Group();
     const ud = {
-      breaks: [], phase: Math.random() * 10, key: null, model: null,
-      eyeMat: new THREE.MeshStandardMaterial({ color: "#000000", emissive: "#ffffff", emissiveIntensity: 2.6 }),
+      breaks: [], phase: Math.random() * 10, key: null, model: null, animT: Math.random() * 10, lastT: null,
       ice: mesh(G("iceBlock", () => new THREE.RoundedBoxGeometry(1, 1, 1, 2, 0.15)), cached("iceMat", () => new THREE.MeshPhysicalMaterial({
         color: "#c8f2ff", transparent: true, opacity: 0.55, roughness: 0.05, clearcoat: 1, emissive: "#5fd0ff", emissiveIntensity: 0.3,
       }))),
@@ -2020,29 +1924,31 @@ const View = (() => {
         root.remove(ud.model);
         disposeObject(ud.model);
       }
-      ud.breaks = [];
-      ud.model = e.kind === "drone" ? buildDroneModel(e, ud) : buildHeavyModel(e, ud);
+      ud.model = buildAlienModel(e, ud);
       root.add(ud.model);
       ud.key = key;
     }
     const r = ud.r;
     root.position.set(wx(e.x), ROAD_Y, wz(e.y));
-    ud.model.rotation.y = -e.dir;
-    const t = e.wobble;
-    let bob = Math.sin(t * 1.3) * r * 0.08;
+    // sanft in Laufrichtung drehen
+    let turn = -e.dir - ud.model.rotation.y;
+    turn = Math.atan2(Math.sin(turn), Math.cos(turn));
+    ud.model.rotation.y += turn * Math.min(1, (ud.lastT === null ? 1 : 0.25));
 
-    if (e.kind === "drone") {
-      ud.orbit.rotation.y = time * (1.5 + e.level * 0.4);
-      if (ud.prism) ud.prism.rotation.y = time * 2;
-      if (ud.heal) ud.heal.scale.setScalar(r * (1 + Math.sin(time * 4) * 0.15));
-      if (e.props.camo) ud.bodyMat.opacity = 0.25 + Math.sin(time * 6 + ud.phase) * 0.1;
-    } else if (ud.rings) {
-      ud.rings[0].rotation.z = time * 0.6;
-      if (ud.rings[1]) ud.rings[1].rotation.z = -time * 0.45;
-      if (ud.lights) ud.lights.rotation.y = time * 0.5;
-      bob = Math.sin(time * 0.8) * 0.08 + 0.1;
-    }
-    ud.model.position.set(0, bob, 0);
+    // Laufen, Krabbeln, Schweben: Tempo der Animation folgt der echten Geschwindigkeit
+    const dt = ud.lastT === null ? 0 : Math.max(0, Math.min(0.1, time - ud.lastT));
+    ud.lastT = time;
+    const moving = e.wait <= 0 && e.stunUntil <= time && e.frozenUntil <= time;
+    const pace = e.kind === "drone" ? enemySpeed(e) / 60 : e.kind === "tank" ? 0.9 : 1;
+    if (moving) ud.animT += dt * e.slowFactor * pace;
+    ud.alien.animate(ud.animT, moving);
+    if (e.props.camo) ud.bodyMat.opacity = 0.35 + Math.sin(time * 6 + ud.phase) * 0.12;
+
+    // Am Tunnel eingesaugt: schrumpfen und leicht drehen
+    const ts = tunnelScale(e);
+    ud.model.scale.setScalar(ts);
+    ud.model.position.set(0, 0, 0);
+    if (ts < 0.98) ud.model.rotation.y += (1 - ts) * Math.sin(time * 9 + ud.phase) * 0.3;
 
     // Zustände: Treffer, Frost, Betäubung, Brand
     const now = time;
@@ -2057,23 +1963,24 @@ const View = (() => {
     const heavy = e.kind !== "drone";
     const k = heavy ? Math.max(0, e.hp / e.maxHp) : 1;
     if (heavy) ud.bodyMat.color.copy(ud.baseColor).lerp(CHARRED, (1 - k) * 0.6);
-    ud.eyeMat.emissive.copy(heavy ? EYE_OK : tmpColor.set(DRONE_LEVELS[e.level].color)).lerp(EYE_HURT, heavy ? Math.min(1, (1 - k) * 1.4) : 0);
+    ud.eyeMat.emissive.copy(ud.eyeBase).lerp(EYE_HURT, heavy ? Math.min(1, (1 - k) * 1.4) : 0);
     const em = ud.bodyMat.emissive;
     if (e.flash > 0) {
       em.set("#ffffff");
-      ud.bodyMat.emissiveIntensity = 0.9;
+      ud.bodyMat.emissiveIntensity = 0.6;
     } else if (e.burn) {
       em.set("#ff5a1a");
       ud.bodyMat.emissiveIntensity = 0.5 + Math.random() * 0.4;
       if (Math.random() < 0.3) addSpark(root.position.x, r * 2 + ROAD_Y, root.position.z, Math.random() < 0.5 ? "#ff8a3d" : "#ffd740", 1);
     } else if (e.slowFactor < 1 || frozen) {
       em.set("#29e6ff");
-      ud.bodyMat.emissiveIntensity = 0.55;
+      ud.bodyMat.emissiveIntensity = 0.45;
     } else if (heavy && k < 0.5) {
       em.set("#ff3d00");
       ud.bodyMat.emissiveIntensity = (0.5 - k) * 2.4 * (0.6 + 0.4 * Math.sin(time * 25 + ud.phase));
     } else {
-      em.set("#000000");
+      em.copy(ud.baseEmissive);
+      ud.bodyMat.emissiveIntensity = ud.baseEmissiveIntensity;
     }
     if (ud.glow) ud.glow.material.opacity = 0.3 + k * 0.4;
     if (heavy) {
