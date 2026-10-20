@@ -1,6 +1,6 @@
 # Neo-City Defense
 
-Ein 3D-Tower-Defense-Spiel im Retro-Synthwave- und Chromecore-Stil – HTML, CSS und JavaScript mit [Three.js](https://threejs.org/) für die 3D-Grafik. Musik und Soundeffekte werden live im Browser erzeugt.
+Ein 3D-Tower-Defense-Spiel im Retro-Synthwave-Stil: Aliens fallen über eine Stadt im Miami-Look der 80er her. HTML, CSS und JavaScript mit [Three.js](https://threejs.org/) für die 3D-Grafik. Musik, Soundeffekte und Alien-Stimmen werden live im Browser erzeugt.
 
 ## Starten
 
@@ -10,6 +10,7 @@ Im **Hauptmenü** gibt es:
 - **Neues Spiel** mit den Schwierigkeiten **Leicht**, **Normal** und **Schwer**
 - **Weiterspielen** (der Spielstand wird nach jeder Welle automatisch gespeichert)
 - **Einstellungen:** Musik und Soundeffekte an/aus mit Lautstärke, automatischer Wellenstart, Spielstand speichern/laden/löschen
+- **🏆 Erfolge:** 10 Erfolge mit Bronze-, Silber- und Gold-Trophäe (dauerhaft gespeichert)
 - **Anleitung**
 
 ## Steuerung
@@ -17,55 +18,67 @@ Im **Hauptmenü** gibt es:
 | Aktion | Bedienung |
 |---|---|
 | Turm wählen | Knopf unten oder Tasten `1`–`5` |
-| Bauen | Feld im Hologramm-Raster anklicken (Umschalttaste = mehrere Türme) |
+| Bauen | Stelle im Hologramm-Raster anklicken – ein Turm belegt 2×2 Felder (Umschalttaste = mehrere Türme) |
 | Bauen abbrechen | `Esc` oder Rechtsklick |
+| Upgrade | Turm anklicken, Upgrade antippen (zeigt Bild vorher/nachher und Werte-Balken), dann **Kaufen** |
+| Spezialfähigkeit | Knopf oben links im Spielfeld (erscheint ab einem Stufe-5-Upgrade) |
 | Welle starten | Knopf oder `Leertaste` |
 | Pause | Knopf oder `P` – in der Pause kann man weiter bauen und verbessern |
-| Kamera | linke Maustaste ziehen = drehen, rechte = verschieben, Mausrad = zoomen |
+| Kamera | linke Maustaste ziehen = drehen, rechte = verschieben, Mausrad = zoomen (Touch: ein Finger dreht, zwei zoomen) |
+
+## Die Karte
+
+- Hügelige **Serpentinen-Karte**: zwei Startwege vereinen sich und schlängeln sich bergauf und bergab zum Stadttor.
+- **Tunnelberg:** Im Tunnel werden die Aliens eingesaugt, schrumpfen und sind unverwundbar.
+- Zwei runde **Seen** mit Uferweg, Laternen und Bänken, geschwungene **Gehwege** mit Zebrastreifen.
+- **10 Gebäudearten** (Mini-Hochhaus, Diner, Spielhalle, Glaskuppel, Funkmast, Neon-Laden, Parkhaus, Kiosk, Palmengarten, Kühltank) – gegen Gold abreißbar.
+- Rundherum eine **Retro-Miami-Stadt** mit Strand, Liegen, Sonnenschirmen, Strandkörben, Rettungsschwimmer-Türmen, Ocean Drive, fahrenden 80er-Autos und Hochhäusern.
+- **Tag-Nacht-Wechsel:** goldene Stunde am Anfang, Synthwave-Dämmerung, Nacht und ein roter Himmel beim Endboss.
 
 ## Ziel
 
 50 Wellen überstehen:
-- **Welle 30:** Boss **Omega-Koloss** (mit Lebensanzeige)
-- **Welle 40–49:** Der Omega-Koloss kehrt immer wieder zurück, gegen Ende auch doppelt (ohne Lebensanzeige)
-- **Welle 50:** Endboss **Hyperion-Mutterschiff** (eigene Lebensanzeige). Wenn es aufbricht, kommen 4 Omega-Kolosse heraus, jeder mit eigener Lebensanzeige.
+- **Welle 30:** Boss **Omega-Jäger** (mit Lebensanzeige)
+- **Welle 40–49:** Der Omega-Jäger kehrt immer wieder zurück, gegen Ende auch doppelt (ohne Lebensanzeige)
+- **Welle 50:** Endboss **Brut-Mutterschiff** (eigene Lebensanzeige). Wenn es aufplatzt, kommen 4 Omega-Jäger heraus, jeder mit eigener Lebensanzeige.
 
 ## Gegner
 
-**Stufen-Drohnen (Stufe 1–5):** Jeder Schadenspunkt senkt die Stufe um 1, eine Drohne der Stufe 1 wird zerstört. Höhere Stufen sind schneller. Die Stufe erkennt man an der Farbe (Cyan, Grün, Gelb, Orange, Pink) und an der Zahl der kreisenden Satelliten. In jeder Welle kommen verschiedene Stufen gemischt.
+**Stufen-Aliens (Stufe 1–5):** Jeder Schadenspunkt senkt die Stufe um 1, ein Alien der Stufe 1 wird zerstört. Höhere Stufen sind schneller. Alle haben die gleiche Form, aber eine eigene Farbe (Cyan, Grün, Gelb, Orange, Pink); ab Stufe 4 mit Hörnern, Stufe 5 mit Rückenstacheln.
 
 **Spezialeigenschaften** (kommen später und können kombiniert sein):
 
-| Eigenschaft | ab Welle | Wirkung |
-|---|---|---|
-| 👁 Tarnung | 12 | Nur Türme mit Tarnerkennung können sie anvisieren. Explosionen treffen sie trotzdem. |
-| ❄ Frostschild | 15 | Immun gegen Kälte (Kryoturm) |
-| 💥 Explosionspanzer | 18 | Immun gegen Explosionen (Brand wirkt trotzdem) |
-| 🪞 Spiegelpanzer | 21 | Reflektiert normale Laser |
-| ✚ Regeneration | 24 | Gewinnt verlorene Stufen zurück |
+| Eigenschaft | ab Welle | Aussehen | Wirkung |
+|---|---|---|---|
+| 👁 Tarnung | 12 | durchsichtiger Krabbler | Nur Türme mit Tarnerkennung können sie anvisieren. Explosionen treffen sie trotzdem. |
+| ❄ Frostschild | 15 | Eiskristalle, eisblaue Hülle | Immun gegen Kälte (Kryoturm) |
+| 💥 Explosionspanzer | 18 | sechsbeiniger Käfer | Immun gegen Explosionen (Brand wirkt trotzdem) |
+| 🪞 Spiegelpanzer | 21 | Chromhaut mit Schutzgitter | Reflektiert normale Laser |
+| ✚ Regeneration | 24 | grüne Blasen und Leuchthülle | Gewinnt verlorene Stufen zurück |
 
-**Panzerkern** (ab Welle 22): hält viel aus und zerfällt in zwei Stufe-5-Drohnen.
+**Brocken** (ab Welle 22): läuft auf den Fäusten, hält viel aus und zerfällt in zwei Stufe-5-Aliens.
 
-Bosse und Panzerkerne zeigen Schaden, indem sie sich verfärben, rot glühen, Funken sprühen, rauchen und Teile verlieren.
+Normale Aliens haben keine Lebensbalken. Bosse und Brocken zeigen Schaden, indem sie sich verfärben, rot glühen, Funken sprühen, rauchen und Teile verlieren.
 
 ## Türme
 
-Jeder Turm hat **3 Ausbauwege mit je 5 Stufen**. Höchstens **5-2-0** ist erlaubt: ein Weg bis Stufe 5, ein zweiter bis Stufe 2, der dritte bleibt leer. Beim Überfahren eines Upgrades mit der Maus zeigt eine Vorschau die Wirkung und die neue Reichweite (pinker Ring).
+Jeder Turm hat **3 Ausbauwege mit je 5 Stufen** und verändert sein Aussehen mit jedem Ausbau (z. B. wird der Laser-Fokus zur langen Singularitäts-Lanze). Höchstens **5-2-0** ist erlaubt: ein Weg bis Stufe 5, ein zweiter bis Stufe 2. **Jedes Stufe-5-Upgrade gibt es nur einmal auf der Karte** (pro Turmart und Weg).
 
-| Turm | Kosten | Ausbauwege | Tarnung |
+| Turm | Kosten | Ausbauwege | Spezialfähigkeit (ab Stufe 5) |
 |---|---|---|---|
-| Laserturm | 200 | Überladung · Fokus · Sensorik | über „Radar“ (Sensorik 2) |
-| Plasmawerfer | 350 | Sprengkraft · Schnellfeuer · Schockwelle | nein (Explosionen treffen Getarnte mit) |
-| Kryoturm | 300 | Tiefkühlung · Kältefeld · Kristalle | Puls trifft Getarnte, Splitter ab „Thermoschock“ |
-| Mörser | 550 | Präzision · Kadenz · Smart-Munition | trifft Getarnte immer |
-| Raumstation | 800 (ab Welle 8, Upgrades ab Welle 12) | Rumpf · Hangar · Sprengkern | Schiffe rammen Getarnte |
+| Laserturm | 200 | Überladung · Fokus · Sensorik | ⚡ Überladung: alle Laser 6 s dreimal so schnell |
+| Plasmawerfer | 350 | Sprengkraft · Schnellfeuer · Schockwelle | ☄ Feuersturm: 8 Einschläge auf die vordersten Aliens |
+| Kryoturm | 300 | Tiefkühlung · Kältefeld · Kristalle | ❄ Frost-Nova: friert alle Aliens 3 s ein |
+| Mörser | 550 | Präzision · Kadenz · Smart-Munition | 🎯 Sperrfeuer: 12 Granaten auf die stärksten Aliens |
+| Raumstation | 800 (ab Welle 8, Upgrades ab Welle 12) | Rumpf · Hangar · Sprengkern | 🚀 Kamikaze-Geschwader: 8 gepanzerte Schiffe |
 
-- **Mörser:** schießt über die ganze Karte auf einen frei wählbaren Zielpunkt („🎯 Zielpunkt setzen“). Mit „Zielverfolgung“ kann er Gegner auch automatisch verfolgen.
-- **Raumstation:** schickt Raumschiffe vom Stadttor den Gegnern entgegen. Sie halten Gegner auf, rammen sie und explodieren, wenn sie zerstört werden.
+- **Mörser:** schießt über die ganze Karte auf einen frei wählbaren Zielpunkt („🎯 Zielpunkt setzen“).
+- **Raumstation:** schickt Raumschiffe vom Stadttor den Aliens entgegen.
 - **Ziel-Priorität** pro Turm: Erster, Letzter, Stärkster oder Nächster.
-- **Statistik:** Beim Anklicken eines Turms sieht man Gesamt-Schaden und zerstörte Gegner.
 
-Unverbesserte Türme reichen ab den mittleren Wellen nicht mehr aus. Upgrades lohnen sich.
+## Erfolge
+
+Alien-Jäger, Baumeister, Meisterwerk, Wellenbrecher, Jäger-Bezwinger, Retter von Neo-City, Unberührt, Goldgräber, Spezialkräfte und Abrissbirne – jeweils mit 🥉 Bronze, 🥈 Silber und 🥇 Gold.
 
 ## Mac-App
 
@@ -88,14 +101,20 @@ Im Ordner `versionen/` liegen alle bisherigen Entwicklungsstufen als eigene, spi
 2. 2D mit Detailkarte
 3. 3D-Landschaft
 4. Chromecore-Sci-Fi-Stadt
-5. Retro-Synthwave (aktuell)
+5. Retro-Synthwave
+6. Alien-Invasion in Neo-Miami (aktuell)
 
 ## Dateien
 
 - `index.html` – Seitenaufbau
-- `style.css` – Chrom-Look der Oberfläche, Menü und Lebensanzeigen
-- `data.js` – Spieldaten: Karte, Schwierigkeiten, Gegner, Türme mit allen Upgrades, Wellen
+- `style.css` – Chrom-Look der Oberfläche, Menü, Lebensanzeigen, Upgrade-Vorschau, Erfolge
+- `data.js` – Spieldaten: Karte (Wege, Tunnel, Seen, Gehwege, Gelände-Höhen), Schwierigkeiten, Gegner, Türme mit allen Upgrades, Wellen
 - `game.js` – Spielablauf, Schadenssystem, Speichern, Menü und Oberfläche
-- `scene.js` – 3D-Darstellung: Retro-Welt mit Sonnenuntergang, Meer und Stadt, Spielfeld, alle Modelle und Effekte
-- `audio.js` – Synthwave-Soundtrack und Soundeffekte (Web Audio API)
-- `lib/` – Three.js 0.147 mit OrbitControls, RoundedBoxGeometry und Bloom-Nachbearbeitung (MIT-Lizenz, siehe `lib/three-LICENSE`)
+- `progress.js` – Spezialfähigkeiten und Erfolge
+- `scene.js` – 3D-Darstellung: Welt, Spielfeld mit Hügeln, Effekte, Tag-Nacht-Wechsel, Kamera
+- `aliens.js` – Alien-Modelle mit Animationen
+- `towers.js` – Turm-Modelle je Ausbauweg und Stufe
+- `buildings.js` – die 10 Gebäudearten auf dem Spielfeld
+- `city.js` – die Retro-Miami-Stadt mit Strand und Autos
+- `audio.js` – Synthwave-Soundtrack, Soundeffekte und Alien-Stimmen (Web Audio API)
+- `lib/` – Three.js 0.147 mit OrbitControls, RoundedBoxGeometry, BufferGeometryUtils und Bloom-Nachbearbeitung (MIT-Lizenz, siehe `lib/three-LICENSE`)

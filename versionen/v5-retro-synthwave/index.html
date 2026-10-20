@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Neo-City Defense</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>Neo-City Defense</h1>
+
+  <div id="hud">
+    <span class="stat">❤️ Leben <b id="lives">0</b></span>
+    <span class="stat">💰 Gold <b id="gold">0</b></span>
+    <span class="stat">🌊 Welle <b id="wave">0</b></span>
+    <button id="startWave">▶ Welle starten</button>
+    <button id="pause">⏸ Pause</button>
+    <button id="speed">Tempo: 1x</button>
+    <button id="auto" title="Nächste Welle automatisch starten">⟳ Auto-Start</button>
+    <button id="resetCamera">🎥 Kamera</button>
+    <button id="menuButton">☰ Menü</button>
+  </div>
+
+  <div id="viewFrame">
+    <div id="view">
+      <div id="bossBars"></div>
+      <div id="banner"></div>
+      <div id="pausedBadge" hidden>⏸ PAUSE – du kannst weiter bauen und verbessern</div>
+      <div id="overlay" hidden><span>GAME OVER</span></div>
+      <div id="controlsHint">Linke Maustaste ziehen: drehen · Rechte Maustaste: verschieben · Mausrad: zoomen</div>
+      <div id="menu" hidden></div>
+    </div>
+  </div>
+
+  <div id="panel">
+    <div id="shop"></div>
+    <div id="info"></div>
+    <details id="legendBox">
+      <summary>Gegner-Übersicht</summary>
+      <div id="legend"></div>
+    </details>
+  </div>
+
+  <script src="../../lib/three.min.js"></script>
+  <script src="../../lib/OrbitControls.js"></script>
+  <script src="../../lib/RoundedBoxGeometry.js"></script>
+  <script src="../../lib/CopyShader.js"></script>
+  <script src="../../lib/LuminosityHighPassShader.js"></script>
+  <script src="../../lib/EffectComposer.js"></script>
+  <script src="../../lib/RenderPass.js"></script>
+  <script src="../../lib/ShaderPass.js"></script>
+  <script src="../../lib/MaskPass.js"></script>
+  <script src="../../lib/UnrealBloomPass.js"></script>
+  <script src="data.js"></script>
+  <script src="audio.js"></script>
+  <script src="scene.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
