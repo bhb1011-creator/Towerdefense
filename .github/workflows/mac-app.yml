@@ -20,7 +20,8 @@ permissions:
 
 jobs:
   build-mac:
-    runs-on: macos-latest
+    # Intel-Mac-Rechner: meist schneller verfügbar; die App ist trotzdem universell
+    runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4
 
