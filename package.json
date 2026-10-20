@@ -1,0 +1,49 @@
+{
+  "name": "neo-city-defense",
+  "productName": "Neo-City Defense",
+  "version": "1.0.0",
+  "description": "3D-Tower-Defense im Retro-Synthwave-Stil",
+  "main": "electron/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist:mac": "electron-builder --mac --universal --publish never"
+  },
+  "devDependencies": {
+    "electron": "33.2.1",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "io.github.bhb1011creator.neocitydefense",
+    "productName": "Neo-City Defense",
+    "copyright": "Neo-City Defense",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "index.html",
+      "style.css",
+      "data.js",
+      "audio.js",
+      "scene.js",
+      "game.js",
+      "lib/**",
+      "versionen/**",
+      "electron/**"
+    ],
+    "mac": {
+      "category": "public.app-category.games",
+      "icon": "build/icon.png",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "identity": "-"
+    },
+    "dmg": {
+      "title": "Neo-City Defense"
+    }
+  },
+  "author": "bhb1011-creator"
+}

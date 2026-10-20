@@ -67,6 +67,19 @@ Jeder Turm hat **3 Ausbauwege mit je 5 Stufen**. Höchstens **5-2-0** ist erlaub
 
 Unverbesserte Türme reichen ab den mittleren Wellen nicht mehr aus. Upgrades lohnen sich.
 
+## Mac-App
+
+Die Mac-App wird bei jedem Update automatisch von GitHub gebaut und unter **Releases** bereitgestellt:
+https://github.com/bhb1011-creator/Towerdefense/releases/latest
+
+1. Die Datei `Neo-City Defense-….dmg` herunterladen und öffnen.
+2. **Neo-City Defense** in den Ordner **Programme** ziehen.
+3. Beim ersten Start fragt macOS nach, weil die App nicht bei Apple registriert ist:
+   **Systemeinstellungen → Datenschutz & Sicherheit → „Trotzdem öffnen“**.
+   Meldet macOS „beschädigt“, hilft im Terminal einmal: `xattr -cr "/Applications/Neo-City Defense.app"`
+
+Selbst bauen (auf einem Mac mit Node.js): `npm install` und dann `npm run dist:mac` – die App liegt danach im Ordner `dist/`.
+
 ## Alle Versionen
 
 Im Ordner `versionen/` liegen alle bisherigen Entwicklungsstufen als eigene, spielbare Spiele. `versionen/index.html` öffnen (oder im Hauptmenü auf „📜 Alle Versionen“ klicken) – dort gibt es eine Übersicht mit Vorschaubildern:

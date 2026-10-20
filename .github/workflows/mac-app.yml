@@ -1,0 +1,57 @@
+# Baut die Mac-App automatisch auf einem Mac-Rechner von GitHub und stellt sie
+# unter "Releases" zum Download bereit (bei jedem Spiel-Update auf main oder per Hand).
+name: Mac-App bauen
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "index.html"
+      - "style.css"
+      - "*.js"
+      - "lib/**"
+      - "electron/**"
+      - "build/**"
+      - "package.json"
+
+permissions:
+  contents: write
+
+jobs:
+  build-mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Abhängigkeiten installieren
+        run: npm install
+
+      - name: App bauen (Intel und Apple Silicon)
+        run: npm run dist:mac
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Download bereitstellen
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: mac-app-${{ github.run_number }}
+          name: Neo-City Defense für Mac (Version ${{ github.run_number }})
+          make_latest: true
+          body: |
+            **Download:** `Neo-City Defense-1.0.0-universal.dmg` unten bei „Assets“ anklicken.
+
+            1. Die .dmg-Datei öffnen und **Neo-City Defense** in den Ordner **Programme** ziehen.
+            2. Die App im Programme-Ordner öffnen. Meldet macOS, dass sie nicht geöffnet werden kann:
+               **Systemeinstellungen → Datenschutz & Sicherheit → ganz unten „Trotzdem öffnen“** klicken.
+            3. Meldet macOS „beschädigt“: im Terminal einmal
+               `xattr -cr "/Applications/Neo-City Defense.app"` eingeben und die App erneut öffnen.
+
+            (Die App ist nicht bei Apple registriert, deshalb fragt macOS beim ersten Start nach.)
+          files: |
+            dist/*.dmg
+            dist/*.zip
