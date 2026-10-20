@@ -69,6 +69,26 @@ const POOLS = LAKES.map((lake) => {
   return tiles;
 });
 
+// Gehwege auf dem Boden: führen aus der Karte hinaus und queren die Alien-Straße.
+// Koordinaten in Feldern (ganze Zahl = Feldmitte). Man kann darauf bauen, Gebäude stehen am Rand.
+const WALKWAYS = [
+  [[2, -0.8], [2, 9]],
+  [[-0.8, 9], [10, 9]],
+  [[10, 6], [10, ROWS - 0.2]],
+  [[5, 0], [COLS - 0.2, 0]],
+  [[14, -0.8], [14, ROWS - 0.2]],
+  [[14, 7], [COLS - 0.2, 7]],
+];
+const walkTiles = new Set();
+for (const [[x0, y0], [x1, y1]] of WALKWAYS) {
+  const n = Math.round(Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)) * 2);
+  for (let i = 0; i <= n; i++) {
+    const c = Math.round(x0 + ((x1 - x0) * i) / n);
+    const r = Math.round(y0 + ((y1 - y0) * i) / n);
+    if (c >= 0 && c < COLS && r >= 0 && r < ROWS) walkTiles.add(`${c},${r}`);
+  }
+}
+
 // Stadttor am Ende des Weges (hier starten auch die Raumschiffe)
 const GATE_TILES = [[23, 4], [23, 6]];
 

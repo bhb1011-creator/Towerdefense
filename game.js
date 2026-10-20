@@ -98,17 +98,18 @@ function buildGrid() {
     }
     return false;
   };
-  // Gebäude: bevorzugt an der Promenade, selten direkt am Weg
+  // Gebäude: meistens direkt an den Gehwegen (wie an einer Straße), einige frei verteilt
+  const besideWalk = (c, r) => !walkTiles.has(`${c},${r}`) && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dc, dr]) => walkTiles.has(`${c + dc},${r + dr}`));
   for (const [kind, def] of Object.entries(OBSTACLES)) {
     let placed = 0;
     let tries = 0;
-    while (placed < def.count && tries < 4000) {
+    while (placed < def.count && tries < 6000) {
       tries++;
       const c = Math.floor(rng() * COLS);
       const r = Math.floor(rng() * ROWS);
-      if (grid[r][c] !== "pad") continue;
-      if ((near(c, r, "path") || near(c, r, "tunnel")) && rng() < 0.75) continue;
-      if (!near(c, r, "pool") && rng() < 0.45) continue;
+      if (grid[r][c] !== "pad" || walkTiles.has(`${c},${r}`)) continue;
+      if ((near(c, r, "path") || near(c, r, "tunnel")) && rng() < 0.7) continue;
+      if (!besideWalk(c, r) && rng() < 0.85) continue;
       grid[r][c] = kind;
       placed++;
     }

@@ -1094,12 +1094,16 @@ const View = (() => {
         if (OBSTACLES[t]) {
           const obj = Buildings.make(t, variant[r][c]);
           obj.position.set(tileX(c), PAD_TOP, tileZ(r));
+          // Vorderseite (+Z) zum Gehweg drehen
+          const face = [[0, 1, 0], [0, -1, Math.PI], [1, 0, Math.PI / 2], [-1, 0, -Math.PI / 2]].find(([dc, dr]) => walkTiles.has(`${c + dc},${r + dr}`));
+          if (face) obj.rotation.y = face[2];
           obstacleMeshes.set(`${c},${r}`, obj);
           mapGroup.add(obj);
         }
       }
     }
     mapGroup.add(makeTunnel());
+    mapGroup.add(makeCrosswalks());
 
     // Laternen am Plattformrand
     const lampPos = [];
@@ -1301,6 +1305,36 @@ const View = (() => {
         g.lineTo(x + ppt * 0.12, y);
         g.stroke();
       }
+      // Gehwege: Pflaster mit hellen Bordsteinen
+      const WALK_W = 0.44;
+      const walkRects = WALKWAYS.map(([[x0, y0], [x1, y1]]) => {
+        const ax = Math.min(x0, x1) + 0.5 - WALK_W / 2;
+        const ay = Math.min(y0, y1) + 0.5 - WALK_W / 2;
+        return [ax, ay, Math.abs(x1 - x0) + WALK_W, Math.abs(y1 - y0) + WALK_W];
+      });
+      for (const [x, y, w, h] of walkRects) {
+        g.fillStyle = "#5a4a78";
+        g.fillRect(px(x), py(y), w * ppt, h * ppt);
+      }
+      // Pflastersteine im Halbverband
+      g.save();
+      g.beginPath();
+      for (const [x, y, w, h] of walkRects) g.rect(px(x), py(y), w * ppt, h * ppt);
+      g.clip();
+      const stone = ppt * 0.11;
+      for (let yy = 0; yy < H; yy += stone) {
+        const off = (Math.round(yy / stone) % 2) * stone * 0.5;
+        for (let xx = -stone + off; xx < W; xx += stone) {
+          g.fillStyle = `rgba(${rng() < 0.5 ? "255,240,255" : "20,10,40"},${0.04 + rng() * 0.08})`;
+          g.fillRect(xx + 1, yy + 1, stone - 2, stone - 2);
+        }
+      }
+      g.restore();
+      for (const [x, y, w, h] of walkRects) {
+        g.strokeStyle = "rgba(225,210,255,0.55)";
+        g.lineWidth = ppt * 0.035;
+        g.strokeRect(px(x), py(y), w * ppt, h * ppt);
+      }
       // Warnstreifen an Portalen und Tor
       const hazard = (x0, y0, w, h) => {
         g.save();
@@ -1390,6 +1424,26 @@ const View = (() => {
         g.arc(x, y, 4, 0, Math.PI * 2);
         g.fill();
       }
+      // feine Leuchtlinien an den Gehwegkanten
+      for (const [[x0, y0], [x1, y1]] of WALKWAYS) {
+        const horiz = Math.abs(x1 - x0) > Math.abs(y1 - y0);
+        for (const side of [-1, 1]) {
+          g.strokeStyle = side < 0 ? "rgba(255,90,200,0.75)" : "rgba(80,230,255,0.75)";
+          g.lineWidth = 3;
+          g.setLineDash([ppt * 0.3, ppt * 0.18]);
+          g.beginPath();
+          const o = side * 0.25;
+          if (horiz) {
+            g.moveTo(px(Math.min(x0, x1) + 0.3), py(y0 + 0.5 + o));
+            g.lineTo(px(Math.max(x0, x1) + 0.7), py(y0 + 0.5 + o));
+          } else {
+            g.moveTo(px(x0 + 0.5 + o), py(Math.min(y0, y1) + 0.3));
+            g.lineTo(px(x0 + 0.5 + o), py(Math.max(y0, y1) + 0.7));
+          }
+          g.stroke();
+        }
+      }
+      g.setLineDash([]);
       // kleine LED-Punkte in den Fugen
       for (const [x0, y0, x1] of panels) {
         if (rng() < 0.5) continue;
@@ -1483,6 +1537,45 @@ const View = (() => {
       const palm = makePalm(rng, 0.8 + rng() * 0.3, false);
       palm.position.set(x - COLS / 2, PAD_TOP, y - ROWS / 2);
       g.add(palm);
+    }
+    return g;
+  }
+
+  // Zebrastreifen, wo ein Gehweg die Alien-Straße quert, mit kleinen Fußgängerampeln
+  function makeCrosswalks() {
+    const g = new THREE.Group();
+    const stripeMat = cached("zebra", () => new THREE.MeshStandardMaterial({ color: "#f4eeff", emissive: "#ffffff", emissiveIntensity: 0.35, roughness: 0.5 }));
+    for (const [[x0, y0], [x1, y1]] of WALKWAYS) {
+      const horiz = Math.abs(x1 - x0) > Math.abs(y1 - y0);
+      for (const key of walkTiles) {
+        if (!pathTiles.has(key)) continue;
+        const [c, r] = key.split(",").map(Number);
+        const onLine = horiz ? r === y0 && c >= Math.min(x0, x1) && c <= Math.max(x0, x1) : c === x0 && r >= Math.min(y0, y1) && r <= Math.max(y0, y1);
+        if (!onLine) continue;
+        // Streifen liegen quer zur Laufrichtung der Fußgänger
+        for (let i = -2; i <= 2; i++) {
+          const m = mesh(G("zebraStripe", () => new THREE.PlaneGeometry(0.09, 0.42).rotateX(-Math.PI / 2)), stripeMat);
+          if (horiz) m.position.set(tileX(c) + i * 0.17, ROAD_Y + 0.008, tileZ(r));
+          else {
+            m.rotation.y = Math.PI / 2;
+            m.position.set(tileX(c), ROAD_Y + 0.008, tileZ(r) + i * 0.17);
+          }
+          g.add(m);
+        }
+        for (const s of [-1, 1]) {
+          const post = new THREE.Group();
+          if (horiz) post.position.set(tileX(c), PAD_TOP, tileZ(r) + s * 0.3);
+          else post.position.set(tileX(c) + s * 0.3, PAD_TOP, tileZ(r));
+          if (horiz) post.position.x += s * 0.5;
+          else post.position.z += s * 0.5;
+          const pole = mesh(G("crossPole", () => new THREE.CylinderGeometry(0.012, 0.016, 0.42, 6)), metal("#e8ecff", 0.25, 1));
+          pole.position.y = 0.21;
+          const light = mesh(G("crossLight", () => new THREE.RoundedBoxGeometry(0.06, 0.09, 0.06, 2, 0.015)), neon(s < 0 ? "#69f0ae" : "#ff2a4a", 2.6));
+          light.position.y = 0.44;
+          post.add(pole, light);
+          g.add(post);
+        }
+      }
     }
     return g;
   }

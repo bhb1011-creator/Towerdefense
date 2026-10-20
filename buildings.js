@@ -187,7 +187,7 @@ const Buildings = (() => {
     const color = pick(PASTELS, v, 2);
     const [text, a, b] = pick(SIGNS.slice(2), v, 3);
     add(g, box("shopBody", 0.74, 0.44, 0.62, 0.04), wall(color, 11 + Math.floor(v * 5), 1, 1), [0, 0.22, -0.02]);
-    add(g, box("shopGlass", 0.6, 0.24, 0.02, 0.01), H.neon("#ffe6c8", 1.3), [0, 0.16, 0.3], { cast: false });
+    add(g, box("shopGlass", 0.6, 0.24, 0.02, 0.01), H.neon("#ffd0a8", 0.8), [0, 0.16, 0.3], { cast: false });
     // gestreifte Markise
     const awning = add(g, H.G("awning", () => new THREE.CylinderGeometry(0.06, 0.06, 0.7, 12, 1, true, 0, Math.PI).rotateZ(Math.PI / 2)), H.stripes(a), [0, 0.34, 0.32], { r: [0.4, 0, 0] });
     awning.castShadow = true;
@@ -202,7 +202,7 @@ const Buildings = (() => {
     const g = new THREE.Group();
     const color = pick(["#c7a6ff", "#8ae8ff"], v);
     for (let i = 0; i < 3; i++) {
-      add(g, box("deck", 0.84, 0.05, 0.84, 0.02), H.chrome(color, 0.3, 0.4), [0, 0.03 + i * 0.26, 0], { receive: true });
+      add(g, box("deck", 0.84, 0.05, 0.84, 0.02), H.metal(color, 0.55, 0.3), [0, 0.03 + i * 0.26, 0], { receive: true });
       add(g, box("deckEdge", 0.86, 0.02, 0.86, 0.01), H.neon(i % 2 ? "#29e6ff" : "#ff4fd8", 2), [0, 0.065 + i * 0.26, 0], { cast: false });
     }
     for (const [x, z] of [[-0.38, -0.38], [0.38, -0.38], [0.38, 0.38], [-0.38, 0.38]]) {
