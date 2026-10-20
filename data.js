@@ -116,14 +116,15 @@ for (const curve of WALK_CURVES) {
 
 // ---------- Gelände: große, weiche Hügel (nur Optik, Höhen in Feld-Einheiten) ----------
 // Der Tunnelberg ist Teil des Geländes; die Straße läuft darunter hindurch.
-const HILL = { x: TUNNEL.col + 0.5, y: (TUNNEL.rowFrom + TUNNEL.rowTo + 1) / 2, rx: 3.3, ry: 3.6, h: 1.25 };
+const HILL = { x: TUNNEL.col + 0.5, y: (TUNNEL.rowFrom + TUNNEL.rowTo + 1) / 2, rx: 3.6, ry: 3.9, h: 0.95 };
 
 const smooth01 = (t) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
 
 function hillHeight(x, y) {
   const u = Math.hypot((x - HILL.x) / HILL.rx, (y - HILL.y) / HILL.ry);
   if (u >= 1) return 0;
-  return HILL.h * smooth01((1 - u) / 0.62);
+  // weiche, runde Kuppel
+  return HILL.h * Math.cos((u * Math.PI) / 2) ** 1.5;
 }
 
 // Hügel: [x, y, Breite, Höhe]. Die Straße führt über die ersten beiden.
@@ -241,7 +242,7 @@ function buildTerrain() {
     const tilePts = pts.map((p) => ({ x: p.x / TILE, y: p.y / TILE }));
     const prof = profile(tilePts, B, 4, 6);
     stamp(B, prof, 0.55, 0.7, null, null);
-    stamp(H, prof, 0.55, 0.7, inTunnel, roadW);
+    stamp(H, prof, 0.55, 1.1, inTunnel, roadW);
   }
   // Gehwege folgen dem Boden (auch über den Tunnelberg), kreuzen die Straße auf gleicher Höhe
   const walkGrid = Float32Array.from(H);

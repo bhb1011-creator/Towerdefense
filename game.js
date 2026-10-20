@@ -1226,10 +1226,15 @@ function updateHud() {
   }
   const t = selectedTower();
   if (t) {
+    // Upgrades bleiben antippbar (für die Vorschau); zu teure werden nur markiert
     for (const btn of ui.info.querySelectorAll("button.up[data-p]")) {
       const p = Number(btn.dataset.p);
-      btn.disabled = !!upgradeBlock(t, p) || state.gold < upgradeCost(t, p);
+      btn.disabled = !!upgradeBlock(t, p);
+      btn.classList.toggle("poor", state.gold < upgradeCost(t, p));
     }
+    const buy = document.getElementById("buyUp");
+    const sel = state.upSelect;
+    if (buy && sel && sel.tower === t) buy.disabled = state.gold < upgradeCost(t, sel.p);
   }
   const clearBtn = document.getElementById("clear");
   if (clearBtn && state.selected && state.selected.kind === "obstacle") {
@@ -1344,18 +1349,17 @@ function showTowerInfo(t) {
     html += `<div class="path"><div class="path-name" style="color:${PATH_COLORS[p]}">${path.name}</div><div class="pips">${pips}</div><div class="owned">${owned}</div>${button}</div>`;
   });
   html += "</div>";
-  html += '<div id="upPreview" class="preview">Fahre mit der Maus über ein Upgrade, um eine Vorschau zu sehen. Erlaubt ist höchstens 5-2-0: ein Weg bis 5, ein zweiter bis 2.</div>';
+  html += '<div id="upPreview" class="preview">Tippe auf ein Upgrade, um Bild, Werte und den Kaufen-Knopf zu sehen. Erlaubt ist höchstens 5-2-0: ein Weg bis 5, ein zweiter bis 2.</div>';
   html += `<button id="sell">Verkaufen (+${formatNumber(sellValue(t))} 💰)</button>`;
   setInfo(html);
 
   for (const btn of ui.info.querySelectorAll("button.up[data-p]")) {
     const p = Number(btn.dataset.p);
-    btn.onclick = () => upgradeTower(t, p);
-    btn.onmouseenter = () => showUpgradePreview(t, p);
-    btn.onfocus = () => showUpgradePreview(t, p);
-    btn.onmouseleave = () => {
-      state.preview = null;
+    btn.onclick = () => {
+      state.upSelect = { tower: t, p };
+      showUpgradePreview(t, p);
     };
+    btn.onmouseenter = () => showUpgradePreview(t, p);
   }
   for (const btn of ui.info.querySelectorAll("button[data-prio]")) {
     btn.onclick = () => {
@@ -1366,22 +1370,83 @@ function showTowerInfo(t) {
   const aimBtn = document.getElementById("aimBtn");
   if (aimBtn) aimBtn.onclick = () => startAiming(t);
   document.getElementById("sell").onclick = () => sellTower(t);
+  // zuletzt gewählten Ausbauweg wieder anzeigen (z. B. nach einem Kauf)
+  const sel = state.upSelect;
+  if (sel && sel.tower === t && t.levels[sel.p] < MAX_TIER) showUpgradePreview(t, sel.p);
   updateHud();
 }
 
+// Werte für die Vorher/Nachher-Balken: Name, Bezugsgröße (voller Balken), Auslesen und Anzeige
+const STAT_BARS = {
+  dmg: { name: "Schaden", ref: 30, get: (s) => s.dmg || 0, fmt: (v) => formatNumber(Math.round(v * 10) / 10) },
+  sps: { name: "Schüsse/s", ref: 10, get: (s) => (s.rate ? 1 / s.rate : 0), fmt: (v) => v.toFixed(1) },
+  pps: { name: "Pulse/s", ref: 3, get: (s) => (s.rate ? 1 / s.rate : 0), fmt: (v) => v.toFixed(2) },
+  range: { name: "Reichweite", ref: 260, get: (s) => (s.global ? 0 : s.range || 0), fmt: (v) => Math.round(v) },
+  pierce: { name: "Durchschlag", ref: 30, get: (s) => s.pierce || 0, fmt: (v) => Math.round(v) },
+  splash: { name: "Explosion", ref: 140, get: (s) => s.splash || 0, fmt: (v) => Math.round(v) },
+  slow: { name: "Verlangsamung", ref: 100, get: (s) => (s.slow ? Math.round((1 - s.slow) * 100) : 0), fmt: (v) => `${v} %` },
+  shards: { name: "Splitter", ref: 12, get: (s) => s.shards || 0, fmt: (v) => v },
+  spm: { name: "Schiffe/min", ref: 40, get: (s) => (s.interval ? (s.ships * 60) / s.interval : 0), fmt: (v) => v.toFixed(1) },
+  shipHp: { name: "Schiffsleben", ref: 200, get: (s) => s.shipHp || 0, fmt: (v) => Math.round(v) },
+  blast: { name: "Sprengkraft", ref: 40, get: (s) => s.blastDmg || 0, fmt: (v) => Math.round(v) },
+};
+const TYPE_BARS = {
+  laser: ["dmg", "sps", "range", "pierce"],
+  plasma: ["dmg", "sps", "range", "splash"],
+  cryo: ["slow", "pps", "range", "dmg", "shards"],
+  mortar: ["dmg", "sps", "splash", "pierce"],
+  station: ["spm", "shipHp", "blast"],
+};
+
+function statBarsHtml(t, now, next, color) {
+  let html = '<div class="bars">';
+  for (const key of TYPE_BARS[t.type]) {
+    const def = STAT_BARS[key];
+    const a = def.get(now);
+    const b = def.get(next);
+    if (!a && !b) continue;
+    // Wurzel-Skala, damit auch kleine Verbesserungen sichtbar sind
+    const w = (v) => Math.min(100, Math.sqrt(v / def.ref) * 100);
+    const diff = b !== a;
+    html += `<div class="bar-row${diff ? " up-diff" : ""}"><span class="bar-name">${def.name}</span>` +
+      `<span class="bar"><i class="next" style="width:${w(b)}%;--c:${color}"></i><i class="now" style="width:${w(a)}%"></i></span>` +
+      `<span class="bar-val">${def.fmt(a)}${diff ? ` → <b>${def.fmt(b)}</b>` : ""}</span></div>`;
+  }
+  return html + "</div>";
+}
+
 function showUpgradePreview(t, p) {
-  if (t.levels[p] >= MAX_TIER) return;
+  const box = document.getElementById("upPreview");
+  if (!box || t.levels[p] >= MAX_TIER) return;
   const tier = TOWER_TYPES[t.type].paths[p].tiers[t.levels[p]];
   const now = towerStats(t);
   const next = previewStats(t, p);
-  const changes = [];
-  if (!now.global && next.range !== now.range) changes.push(`Reichweite ${Math.round(now.range)} → ${Math.round(next.range)}`);
-  if (next.dmg !== now.dmg && t.type !== "station") changes.push(`Schaden ${now.dmg} → ${next.dmg}`);
-  if (next.rate !== now.rate && now.rate) changes.push(`Feuerrate ${(1 / now.rate).toFixed(1)} → ${(1 / next.rate).toFixed(1)}/s`);
-  if (next.camo && !now.camo) changes.push("👁 erkennt danach Tarnung");
+  const nextLevels = [...t.levels];
+  nextLevels[p]++;
   const block = upgradeBlock(t, p);
-  document.getElementById("upPreview").innerHTML =
-    `<b>${tier.name}</b> (Stufe ${t.levels[p] + 1}): ${tier.desc}${changes.length ? `<br><small>${changes.join(" · ")}</small>` : ""}${block && block !== "max" ? `<br><small class="warn">${block}</small>` : ""}`;
+  const cost = upgradeCost(t, p);
+  const extras = [];
+  if (next.camo && !now.camo) extras.push("👁 erkennt danach Tarnung");
+  let imgs = "";
+  try {
+    imgs = `<div class="up-imgs"><figure><img src="${View.towerPreview(t.type, t.levels)}" alt=""><figcaption>Jetzt</figcaption></figure>` +
+      `<span class="up-arrow" style="color:${PATH_COLORS[p]}">➜</span>` +
+      `<figure><img src="${View.towerPreview(t.type, nextLevels)}" alt=""><figcaption>Danach</figcaption></figure></div>`;
+  } catch (err) {
+    imgs = "";
+  }
+  let buy;
+  if (block) buy = `<button class="buy" disabled>${block}</button>`;
+  else buy = `<button class="buy" id="buyUp" style="--accent:${PATH_COLORS[p]}" ${state.gold < cost ? "disabled" : ""}>Kaufen · ${formatNumber(cost)} 💰</button>`;
+  box.innerHTML = `${imgs}<div class="up-title"><b style="color:${PATH_COLORS[p]}">${tier.name}</b> <small>(Stufe ${t.levels[p] + 1})</small></div>` +
+    `<div class="up-desc">${tier.desc}${extras.length ? `<br><small>${extras.join(" · ")}</small>` : ""}</div>` +
+    statBarsHtml(t, now, next, PATH_COLORS[p]) + buy;
+  box.classList.add("open");
+  const btn = document.getElementById("buyUp");
+  if (btn) btn.onclick = () => {
+    state.upSelect = { tower: t, p };
+    upgradeTower(t, p);
+  };
   state.preview = { tower: t, range: next.range };
 }
 

@@ -722,6 +722,116 @@ button.up.locked small {
   line-height: 1.45;
 }
 
+button.up.poor small {
+  color: #c2185b;
+}
+
+.preview.open {
+  border-style: solid;
+  background: rgba(30, 12, 60, 0.55);
+}
+
+.up-imgs {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.up-imgs figure {
+  margin: 0;
+  width: 132px;
+  max-width: 38vw;
+}
+
+.up-imgs img {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 16px;
+  background: radial-gradient(circle at 50% 60%, rgba(255, 60, 172, 0.22), rgba(20, 8, 44, 0.6) 70%);
+  border: 1px solid var(--glass-border);
+}
+
+.up-imgs figcaption {
+  font-size: 0.75rem;
+  opacity: 0.75;
+}
+
+.up-arrow {
+  font-size: 1.6rem;
+  font-weight: 900;
+  text-shadow: 0 0 10px currentColor;
+}
+
+.up-title {
+  margin-top: 4px;
+  font-size: 1rem;
+}
+
+.up-desc {
+  font-size: 0.82rem;
+  opacity: 0.9;
+  margin-bottom: 4px;
+}
+
+.bars {
+  display: grid;
+  gap: 4px;
+  margin: 6px auto 8px;
+  max-width: 420px;
+  text-align: left;
+}
+
+.bar-row {
+  display: grid;
+  grid-template-columns: 7.5em 1fr 6.5em;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+}
+
+.bar-row.up-diff .bar-name {
+  color: #fff;
+  font-weight: 700;
+}
+
+.bar {
+  position: relative;
+  height: 9px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.bar i {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  border-radius: 6px;
+}
+
+.bar i.next {
+  background: var(--c);
+  box-shadow: 0 0 10px var(--c);
+}
+
+.bar i.now {
+  background: rgba(230, 225, 255, 0.85);
+}
+
+.bar-val {
+  text-align: right;
+  white-space: nowrap;
+}
+
+button.buy {
+  border-radius: 16px;
+  padding: 8px 22px;
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
 .preview .warn {
   color: #ffb3c3;
 }

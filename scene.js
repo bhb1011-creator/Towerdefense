@@ -1681,6 +1681,7 @@ const View = (() => {
       portal.position.set(x, PAD_TOP, z);
       // Wand steht im Hang, Öffnung zeigt nach außen
       portal.rotation.y = dir > 0 ? 0 : Math.PI;
+      portal.scale.setScalar(0.85);
       const wall = mesh(wallGeo, chrome("#6a5c9a", 0.25, 0.6), { cast: true, receive: true });
       wall.position.z = -0.2;
       const arch = mesh(G("portalArch", () => new THREE.TorusGeometry(0.53, 0.05, 10, 40, Math.PI)), chrome("#f4f6ff", 0.08), { cast: true });
@@ -2501,7 +2502,7 @@ const View = (() => {
       };
     }
     const k = previewKit;
-    const m = Towers.build(type, levels);
+    const m = Towers.build(type, levels, { preview: true });
     Towers.animate(m, 1.2, 0);
     if (m.aims) m.head.rotation.y = 0.5;
     k.sc.add(m.root);

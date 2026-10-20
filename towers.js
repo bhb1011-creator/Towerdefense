@@ -85,8 +85,8 @@ const Towers = (() => {
     const sum = levels[0] + levels[1] + levels[2];
     const top = Math.max(...levels);
     part(root, GEO.box(1.62, 0.12, 1.62, 0.12), C.chrome("#3a3460", 0.35), [0, 0.06, 0]);
-    // Fundament, das am Hang bis in den Boden reicht
-    part(root, GEO.box(1.56, 1.6, 1.56, 0.06), H.metal("#2a2448", 0.45, 0.6), [0, -0.8, 0]);
+    // Fundament, das am Hang bis in den Boden reicht (nicht im Vorschaubild)
+    if (!ctx.preview) part(root, GEO.box(1.56, 1.6, 1.56, 0.06), H.metal("#3a2d5c", 0.6, 0.4), [0, -0.8, 0]);
     part(root, GEO.flat(0.74, 0.02), C.neon(color, 2.2), [0, 0.125, 0], [0, 0, 0], 1, false);
     const col = type === "station" ? 0.62 : 0.46;
     part(root, GEO.cyl(col * 0.82, col, 0.34, 36), C.chrome("#e8ecff", 0.12), [0, 0.29, 0]);
@@ -159,7 +159,7 @@ const Towers = (() => {
     {
       main(t, k) {
         const color = "#ff3cac";
-        const len = [0.45, 0.5, 0.62, 0.78, 0.9, 1.25][t];
+        const len = [0.45, 0.5, 0.62, 0.78, 0.9, 1.5][t];
         if (t === 4) {
           // Railgun: zwei lange Schienen mit Spulen dazwischen
           for (const s of [-1, 1]) part(k.gun, GEO.box(len, 0.05, 0.035, 0.012), C.chrome("#f0f2ff", 0.06), [0.1 + len / 2, 0, s * 0.06]);
@@ -209,7 +209,7 @@ const Towers = (() => {
         }
         if (t === 5) {
           // Orbital-Uplink: hoher Mast mit großer Schüssel und Hologramm-Ringen
-          const mast = group(k.root, [0, k.headY, 0]);
+          const mast = group(k.upper, [0, k.headY, 0]);
           part(mast, GEO.cyl(0.03, 0.05, 1.0, 10), C.chrome("#f4f6ff", 0.1), [0, 0.7, 0]);
           const dish = group(mast, [0, 1.15, 0]);
           part(dish, H.G("uplinkDish", () => new THREE.SphereGeometry(0.32, 28, 10, 0, Math.PI * 2, 0, Math.PI / 3.5)), C.chrome("#fff6d0", 0.08), [0, 0, 0], [Math.PI, 0, 0]);
@@ -234,7 +234,7 @@ const Towers = (() => {
   function laserHead(k) {
     // Chromkapsel mit leuchtendem Kern
     part(k.gun, GEO.sphere(0.22, 28), C.chrome("#d8f7ff", 0.07), [0, 0, 0], [0, 0, 0], [1.3, 0.75, 1]);
-    part(k.gun, GEO.collar(0.24, 0.018), C.neon("#29e6ff", 2.6), [0, 0, 0], [0, 0, 0], [1, 0.8, 1.05], false);
+    part(k.gun, GEO.flat(0.25, 0.018), C.neon("#29e6ff", 2.6), [0, 0, 0], [0, 0, 0], [1.3, 1, 1], false);
     part(k.head, GEO.sphere(0.06, 14), C.neon("#29e6ff", 2.8), [0, 0.18, 0], [0, 0, 0], 1, false);
   }
 
@@ -313,7 +313,7 @@ const Towers = (() => {
         }
         if (t === 5) {
           // Zeitbombe: großes Ziffernblatt mit drehenden Zeigern über dem Turm
-          const clock = group(k.root, [0, k.headY + 0.75, 0]);
+          const clock = group(k.upper, [0, k.headY + 0.75, 0]);
           part(clock, GEO.torus(0.3, 0.03, 48), C.chrome("#fff6d0", 0.06), [0, 0, 0]);
           part(clock, GEO.torus(0.26, 0.012, 48), C.neon("#ffd740", 3), [0, 0, 0], [0, 0, 0], 1, false);
           for (let i = 0; i < 12; i++) {
@@ -395,7 +395,7 @@ const Towers = (() => {
         }
         if (t === 5) {
           // Eiszeit: große Schneeflocke über dem Turm
-          const flake = group(k.root, [0, k.headY + 0.95, 0]);
+          const flake = group(k.upper, [0, k.headY + 0.95, 0]);
           for (let i = 0; i < 6; i++) {
             const arm = group(flake);
             arm.rotation.y = (i / 6) * Math.PI * 2;
@@ -516,7 +516,7 @@ const Towers = (() => {
         }
         if (t === 5) {
           // Orbitalschlag: schwebender Satellit mit Sonnensegeln
-          const sat = group(k.root, [0, k.headY + 1.1, 0]);
+          const sat = group(k.upper, [0, k.headY + 1.1, 0]);
           part(sat, GEO.box(0.2, 0.2, 0.2, 0.04), C.chrome("#f4f6ff", 0.08), [0, 0, 0]);
           for (const s of [-1, 1]) part(sat, GEO.box(0.02, 0.18, 0.4, 0.005), H.metal("#1a2a6a", 0.2, 0.8), [0, 0, s * 0.33]);
           part(sat, GEO.cone(0.08, 0.14, 16), C.chrome(), [0, -0.16, 0], [Math.PI, 0, 0]);
@@ -556,7 +556,7 @@ const Towers = (() => {
         }
         if (t === 5) {
           // Schlachtkreuzer schwebt über der Station
-          const cruiser = group(k.root, [0, k.headY + 1.0, 0]);
+          const cruiser = group(k.upper, [0, k.headY + 1.0, 0]);
           part(cruiser, GEO.capsuleX(0.13, 0.7), C.chrome("#ffe6fb", 0.06), [0, 0, 0]);
           part(cruiser, GEO.box(0.3, 0.04, 0.6, 0.02), C.chrome("#ffd0f0", 0.08), [-0.1, 0, 0]);
           part(cruiser, GEO.box(0.18, 0.12, 0.12, 0.03), C.chrome("#f4f6ff", 0.08), [-0.05, 0.13, 0]);
@@ -587,7 +587,7 @@ const Towers = (() => {
         }
         if (t === 5) {
           // Trägerflotte: drei Schiffe kreisen über der Station
-          const fleet = group(k.root, [0, k.headY + 0.8, 0]);
+          const fleet = group(k.upper, [0, k.headY + 0.8, 0]);
           for (let i = 0; i < 3; i++) {
             const ship = H.makeShipModel("#ffd740");
             const a = (i / 3) * Math.PI * 2;
@@ -650,22 +650,26 @@ const Towers = (() => {
 
   // Baut das Modell eines Turms mit bestimmten Ausbaustufen.
   // Rückgabe: { root, head, gun, crystal, spin, spinFire, pulse, bob, stationRing, aims }
-  function build(type, levels) {
+  const UPPER_Y = 0.44; // Oberkante der Sockelsäule
+  const UPPER_SCALE = 1.55; // Turmkopf groß genug für den 2×2-Platz
+
+  function build(type, levels, { preview = false } = {}) {
     const def = TYPES[type];
     const root = new THREE.Group();
-    const head = group(root, [0, def.headY, 0]);
+    const top = Math.max(...levels);
+    // alles oberhalb des Sockels wird gemeinsam vergrößert
+    const upper = group(root, [0, UPPER_Y, 0]);
+    upper.scale.setScalar(UPPER_SCALE * (1 + top * 0.05));
+    const head = group(upper, [0, def.headY - UPPER_Y, 0]);
     const gun = group(head);
     const order = [0, 1, 2].sort((a, b) => levels[b] - levels[a] || a - b);
     const main = order[0];
     const second = order[1];
-    const k = { root, head, gun, headY: def.headY, crownY: def.headY + 1.0, spin: [], spinFire: [], pulse: [], bob: [], crystal: null, stationRing: null };
+    const k = { root, upper, head, gun, headY: def.headY - UPPER_Y, crownY: UPPER_Y + (def.headY - UPPER_Y + 0.9) * UPPER_SCALE * (1 + top * 0.05), preview, spin: [], spinFire: [], pulse: [], bob: [], crystal: null, stationRing: null };
     buildBase(root, type, levels, k);
     def.head(k);
     def.paths[main].main(levels[main], k);
     if (levels[second] > 0) def.paths[second].addon(levels[second], k);
-    // höhere Stufen machen den Turm insgesamt etwas größer
-    const top = Math.max(...levels);
-    head.scale.setScalar(1 + top * 0.06);
     root.traverse((o) => { if (o.isMesh && o.material && o.material.transparent) o.castShadow = false; });
     return { ...k, aims: def.aims };
   }
